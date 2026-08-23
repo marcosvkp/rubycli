@@ -45,7 +45,11 @@ src/
     runner.ts       # runAgentTurn() helper extracted from repl.ts
   core/           # Pure library — no process.env reads, no CLI/state imports
     agent.ts        # Agentic loop: stream → collect function calls → execute → feed back
-    executor.ts     # Parallel tool execution, skill activation dispatch, HITL confirmation gate
+    executor.ts     # Parallel tool execution, skill activation dispatch, HITL confirmation gate,
+                    #   provenance-tracking confirmation bump (#309): results from web_fetch/mcp__*/
+                    #   out-of-project reads are tagged untrusted; while any is consumed this turn,
+                    #   outbound/mutating tools (bash/write/edit/multi_edit/web_fetch/mcp__*) are forced
+                    #   through the gate (same-batch reads arm it pre-dispatch)
     context.ts      # Conversation history, skill content injection, context pruning
     prompt.ts       # DEFAULT_SYSTEM_INSTRUCTION template + loadSystemInstruction() (OPENCLI_SYSTEM_MD)
     compact.ts      # compactContext() — LLM-based context compaction for /compact command
