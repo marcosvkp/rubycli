@@ -2,6 +2,11 @@ import chalk from "chalk";
 import type { ConfirmFn } from "../core/executor.js";
 import { loadConfig, saveConfig, type Config } from "../state/config.js";
 import { loadSettings, type Settings } from "../state/settings.js";
+import {
+  loadProjectPermissions,
+  saveProjectPermissions,
+  type ProjectPermissions,
+} from "../state/project-permissions.js";
 import { selectKey } from "./input.js";
 
 // Pattern format for deny rules: "toolName(argGlob)" where * matches any chars.
@@ -52,8 +57,11 @@ export function createForcesConfirmationFn(
 }
 
 export interface PermissionSources {
-  /** Trusted grants — only ever sourced from the user's global config. */
+  /** Trusted global grants — only ever sourced from the user's ~/.opencli/config.json. */
   globalAllowSet: Set<string>;
+  /** Trusted per-project grants — sourced from ~/.opencli/project-permissions/<hash>.json,
+   *  which lives OUTSIDE the repository and therefore cannot be shipped by a repo (#308). */
+  projectAllowSet: Set<string>;
   /** Merged deny patterns (global + project). Restrictive rules are safe to accept
    *  from project scope because they can only block, never grant. */
   denyPatterns: string[];
@@ -64,15 +72,22 @@ export interface PermissionSources {
 /**
  * Build the permission sources used by the HITL gate.
  *
- * Grants (`allow`) are sourced ONLY from the user's global `~/.opencli/config.json`.
- * Project-scoped `.opencli/settings.json` ships with the repository and is therefore
- * untrusted: a hostile repo could pre-populate `permissions.allow` to silently bypass
- * the confirmation gate (GHSA-3g98-ffw6-87mg). Restrictive rules (`ask`, `deny`) are
- * still merged from project scope — they can only prompt or block, never auto-approve.
+ * Grants (`allow`) are sourced only from user-controlled storage: the global
+ * `~/.opencli/config.json` and the per-project `~/.opencli/project-permissions/<hash>.json`
+ * (#308). Project-scoped `.opencli/settings.json` ships with the repository and is
+ * therefore untrusted: a hostile repo could pre-populate `permissions.allow` to
+ * silently bypass the confirmation gate (GHSA-3g98-ffw6-87mg). Restrictive rules
+ * (`ask`, `deny`) are still merged from project scope — they can only prompt or
+ * block, never auto-approve.
  */
-export function buildPermissionSources(config: Config, settings: Settings): PermissionSources {
+export function buildPermissionSources(
+  config: Config,
+  settings: Settings,
+  storedProject?: ProjectPermissions,
+): PermissionSources {
   return {
     globalAllowSet: new Set(config.permissions?.allow ?? []),
+    projectAllowSet: new Set(storedProject?.allow ?? []),
     denyPatterns: [...(config.permissions?.deny ?? []), ...(settings.permissions?.deny ?? [])],
     askPatterns: [...(config.permissions?.ask ?? []), ...(settings.permissions?.ask ?? [])],
   };
@@ -216,8 +231,19 @@ export interface ConfirmBundle {
 }
 
 export async function createConfirmFn(): Promise<ConfirmBundle> {
-  const [config, settings] = await Promise.all([loadConfig(), loadSettings()]);
-  const { globalAllowSet, denyPatterns, askPatterns } = buildPermissionSources(config, settings);
+  const cwd = process.cwd();
+  const [config, settings, storedProject] = await Promise.all([
+    loadConfig(),
+    loadSettings(cwd),
+    loadProjectPermissions(cwd),
+  ]);
+  const { globalAllowSet, projectAllowSet, denyPatterns, askPatterns } = buildPermissionSources(
+    config,
+    settings,
+    storedProject,
+  );
+  // Decision set = global + trusted per-project grants (both user-controlled storage).
+  const allowSet = new Set([...globalAllowSet, ...projectAllowSet]);
 
   // Signal when the project ships allow entries we are intentionally ignoring. This
   // both explains why a user's pre-existing grants stopped working (debugging) and
@@ -228,18 +254,26 @@ export async function createConfirmFn(): Promise<ConfirmBundle> {
 
   const forcesConfirmation = createForcesConfirmationFn(askPatterns);
 
-  // Persist an "always allow" grant to the user's global config. Grants are never
-  // written to project-scoped settings.json — that file ships with the repo and
-  // must not carry auto-approve authority (GHSA-3g98-ffw6-87mg).
+  // Grants are never written to the repo-shipped settings.json — that file must not
+  // carry auto-approve authority (GHSA-3g98-ffw6-87mg). Global grants go to
+  // ~/.opencli/config.json; project grants go to ~/.opencli/project-permissions/
+  // <hash-of-cwd>.json, which restores per-project scoping without repo control (#308).
   const persistGlobalAllow = async (key: string): Promise<void> => {
     globalAllowSet.add(key);
+    allowSet.add(key);
     const cfg = await loadConfig();
     await saveConfig({ permissions: { ...cfg.permissions, allow: [...globalAllowSet] } });
   };
 
+  const persistProjectAllow = async (key: string): Promise<void> => {
+    projectAllowSet.add(key);
+    allowSet.add(key);
+    await saveProjectPermissions(cwd, [...projectAllowSet]);
+  };
+
   const confirmFn: ConfirmFn = async (toolName, args) => {
     const interactive = process.stdin.isTTY === true;
-    const decision = decideConfirmation(globalAllowSet, denyPatterns, toolName, args, interactive);
+    const decision = decideConfirmation(allowSet, denyPatterns, toolName, args, interactive);
     if (decision === "allow") return "allow";
     if (decision === "deny") return "deny";
 
@@ -258,14 +292,15 @@ export async function createConfirmFn(): Promise<ConfirmBundle> {
     const mcpMatch = toolName.match(/^mcp__(.+?)__/);
     const options: Array<{ key: string; label: string }> = [
       { key: "y", label: "Yes, run once" },
-      { key: "g", label: "Yes, always (saved to global ~/.opencli/config.json)" },
+      { key: "p", label: "Yes, always for this project  (~/.opencli/project-permissions/)" },
+      { key: "g", label: "Yes, always globally          (~/.opencli/config.json)" },
     ];
     if (isMcp) {
-      options.push({ key: "t", label: "Yes, always for this tool, any args  (global)" });
+      options.push({ key: "t", label: "Yes, always for this tool, any args  (project)" });
       if (mcpMatch) {
         options.push({
           key: "s",
-          label: `Yes, always for any tool from '${mcpMatch[1]}'  (global)`,
+          label: `Yes, always for any tool from '${mcpMatch[1]}'  (project)`,
         });
       }
     }
@@ -275,12 +310,14 @@ export async function createConfirmFn(): Promise<ConfirmBundle> {
 
     if (choice === null || choice === "n") return "deny";
 
-    if (choice === "g") {
+    if (choice === "p") {
+      await persistProjectAllow(`${toolName}:${JSON.stringify(args)}`);
+    } else if (choice === "g") {
       await persistGlobalAllow(`${toolName}:${JSON.stringify(args)}`);
     } else if (choice === "t") {
-      await persistGlobalAllow(`${toolName}:*`);
+      await persistProjectAllow(`${toolName}:*`);
     } else if (choice === "s" && mcpMatch) {
-      await persistGlobalAllow(`mcp__${mcpMatch[1]}__*`);
+      await persistProjectAllow(`mcp__${mcpMatch[1]}__*`);
     }
 
     return "allow";

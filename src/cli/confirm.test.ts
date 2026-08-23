@@ -11,6 +11,7 @@ import {
 } from "./confirm.js";
 import type { Config } from "../state/config.js";
 import type { Settings } from "../state/settings.js";
+import type { ProjectPermissions } from "../state/project-permissions.js";
 
 describe("globMatch", () => {
   it("matches an exact string with no wildcards", () => {
@@ -155,16 +156,34 @@ describe("buildPermissionSources", () => {
     // A hostile repo ships .opencli/settings.json pre-approving all bash calls.
     const config = { permissions: { allow: [] } } as unknown as Config;
     const settings = { permissions: { allow: ["bash(*)"] } } as Settings;
-    const { globalAllowSet } = buildPermissionSources(config, settings);
-    expect(globalAllowSet.has("bash(*)")).toBe(false);
+    const { globalAllowSet, projectAllowSet } = buildPermissionSources(config, settings);
+    expect(globalAllowSet.size + projectAllowSet.size).toBe(0);
+  });
+
+  it("includes global config allow entries in the global set only", () => {
+    const config = { permissions: { allow: ["bash(npm test)"] } } as unknown as Config;
+    const settings = {} as Settings;
+    const { globalAllowSet, projectAllowSet } = buildPermissionSources(config, settings);
+    expect(globalAllowSet.has("bash(npm test)")).toBe(true);
+    expect(projectAllowSet.size).toBe(0);
+  });
+
+  it("includes stored per-project grants in the project set (#308)", () => {
+    const config = { permissions: { allow: [] } } as unknown as Config;
+    const settings = {} as Settings;
+    const stored = { cwd: "/proj/a", allow: ["bash:*"] } as ProjectPermissions;
+    const { globalAllowSet, projectAllowSet } = buildPermissionSources(config, settings, stored);
+    expect(projectAllowSet.has("bash:*")).toBe(true);
     expect(globalAllowSet.size).toBe(0);
   });
 
-  it("includes global config allow entries", () => {
-    const config = { permissions: { allow: ["bash(npm test)"] } } as unknown as Config;
-    const settings = {} as Settings;
-    const { globalAllowSet } = buildPermissionSources(config, settings);
-    expect(globalAllowSet.has("bash(npm test)")).toBe(true);
+  it("keeps repo-shipped allow OUT of both sets even when a stored project file exists", () => {
+    const config = { permissions: { allow: [] } } as unknown as Config;
+    const settings = { permissions: { allow: ["bash(*)", "write(*)"] } } as Settings;
+    const stored = { cwd: "/proj/a", allow: ["bash:npm test"] } as ProjectPermissions;
+    const { globalAllowSet, projectAllowSet } = buildPermissionSources(config, settings, stored);
+    expect([...projectAllowSet]).toEqual(["bash:npm test"]);
+    expect(globalAllowSet.size).toBe(0);
   });
 
   it("merges deny patterns from both global and project scope", () => {
@@ -182,11 +201,11 @@ describe("buildPermissionSources", () => {
   });
 
   it("tolerates missing permissions blocks", () => {
-    const { globalAllowSet, denyPatterns, askPatterns } = buildPermissionSources(
+    const { globalAllowSet, projectAllowSet, denyPatterns, askPatterns } = buildPermissionSources(
       {} as unknown as Config,
       {} as Settings,
     );
-    expect(globalAllowSet.size).toBe(0);
+    expect(globalAllowSet.size + projectAllowSet.size).toBe(0);
     expect(denyPatterns).toEqual([]);
     expect(askPatterns).toEqual([]);
   });
