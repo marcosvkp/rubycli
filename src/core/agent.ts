@@ -159,6 +159,11 @@ export class Agent {
     let envErrorCount = 0;
     let emptyRetried = false;
     const firedReminders = new Set<string>();
+    // #309 provenance bump: latched when any tool result this turn delivered
+    // untrusted content (out-of-project read, web_fetch, MCP). Scoped to this
+    // run() — the next user message starts a fresh turn with a clean slate, so
+    // a legitimate task that reads external docs early doesn't stay elevated.
+    let untrustedConsumed = false;
 
     while (true) {
       const pendingCalls: FunctionCallPart[] = [];
@@ -275,7 +280,14 @@ export class Agent {
         obs: this.obs,
         snapshot: this.snapshotManager,
         cwd: process.cwd(),
+        untrustedConsumed,
       });
+
+      // Keep the bump armed for the rest of the turn once any result has
+      // delivered untrusted content (#309).
+      if (results.some((r) => r.untrusted)) {
+        untrustedConsumed = true;
+      }
 
       // Surface any snapshot warning produced this turn as an error event.
       // drainWarning() clears it so it is only emitted once per failure.

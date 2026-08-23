@@ -34,6 +34,14 @@ export interface FunctionResultPart {
   // constructed (executor) or restored (reconstructMessages); echoed by the
   // Gemini provider on the outgoing functionResponse.
   thoughtSignature?: string;
+  // Provenance tag (#309): true when this result delivered content from an
+  // untrusted source — a read of a path outside the project, any web_fetch,
+  // or any MCP tool result. The agent loop uses it to track "consumed untrusted
+  // content since the last user message" and raise the confirmation gate on
+  // outbound/mutating tools for the rest of the turn (prompt-injection
+  // defense — see docs/design/prompt-injection-defenses.md). Never sent to
+  // providers; internal only.
+  untrusted?: boolean;
 }
 
 export type MessagePart = TextPart | FunctionCallPart | FunctionResultPart;
