@@ -152,6 +152,13 @@ describe("providerDetectionWarning", () => {
     expect(warning).toContain("gemini");
   });
 
+  it("stays silent when the fallback is the product default (RubyCLI Cloud models)", () => {
+    // RubyCLI Cloud model names are arbitrary by design — the backend is the
+    // source of truth, so an unknown name routing to rubycli is normal.
+    expect(providerDetectionWarning("muse-spark-1.3-contributor", "rubycli")).toBeUndefined();
+    expect(providerDetectionWarning("ruby-turbo-x", "rubycli")).toBeUndefined();
+  });
+
   it("stays silent when a hosted prefix matched", () => {
     expect(providerDetectionWarning("claude-opus-5", "anthropic")).toBeUndefined();
     expect(providerDetectionWarning("gpt-4o", "openai")).toBeUndefined();

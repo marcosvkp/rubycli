@@ -290,6 +290,10 @@ export function providerDetectionWarning(model: string, detected: string): strin
     (preset.detectPrefixes ?? []).some((prefix) => model.startsWith(prefix)),
   );
   if (!matchedAPrefix) {
+    // The product default (rubycli) is the intended home for RubyCLI Cloud
+    // models, whose names are arbitrary by design (the backend is the source
+    // of truth) — warning there would fire on every normal session.
+    if (detected === DEFAULT_PROVIDER) return undefined;
     return (
       `Model '${model}' matches no known provider prefix; defaulting to '${detected}'. ` +
       `Pass --provider <${listProviderIds().join("|")}> if that is not what you want.`
