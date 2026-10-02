@@ -68,6 +68,44 @@ describe("Agent max turns guard", () => {
   });
 });
 
+describe("Agent.setModel", () => {
+  function makeQuietClient(): LLMClient {
+    return {
+      async *stream() {
+        yield { type: "text", text: "ok" } as StreamEvent;
+        yield { type: "done" } as StreamEvent;
+      },
+    };
+  }
+
+  it("switches the model and client, preserving history", async () => {
+    const agent = new Agent(
+      makeQuietClient(),
+      makeNoopRegistry(),
+      new SkillRegistry(),
+      undefined,
+      undefined,
+      5,
+      {
+        model: "ruby-auto",
+      },
+    );
+    expect(agent.getModel()).toBe("ruby-auto");
+    await collectEvents(agent, "hello");
+
+    const newClient = makeQuietClient();
+    agent.setModel("ruby-fast", newClient);
+    expect(agent.getModel()).toBe("ruby-fast");
+
+    // History survives the switch — the new model sees the full transcript.
+    const stats = agent.getContextStats();
+    expect(stats.messageCount).toBeGreaterThan(0);
+    const events = await collectEvents(agent, "again");
+    expect(events.find((e) => e.type === "error")).toBeUndefined();
+    expect(events.find((e) => e.type === "done")).toBeDefined();
+  });
+});
+
 describe("Agent plan mode", () => {
   it("filters write/edit/bash from tool definitions in plan mode", async () => {
     let receivedTools: ToolDefinition[] = [];

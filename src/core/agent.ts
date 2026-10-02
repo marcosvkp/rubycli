@@ -131,6 +131,27 @@ export class Agent {
     return this.model;
   }
 
+  /**
+   * Switch the session model mid-conversation. Swaps the LLM client (and the
+   * compaction client, unless it was explicitly pinned) and recomputes the
+   * context window. Conversation history is preserved — the new model sees
+   * the full transcript. Persisting as the default is the CLI's decision.
+   */
+  setModel(
+    model: string,
+    client: LLMClient,
+    compactionClient?: LLMClient,
+    contextWindow?: number,
+    provider?: string,
+  ): void {
+    this.model = model;
+    this.client = client;
+    if (compactionClient) {
+      this.compactionClient = compactionClient;
+    }
+    this.contextWindow = contextWindowFor(model, contextWindow, provider);
+  }
+
   setConfirmFn(fn: ConfirmFn): void {
     this.confirmFn = fn;
   }

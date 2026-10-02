@@ -197,7 +197,18 @@ async function startChat(
   providerOverride?: string,
   baseUrlOverride?: string,
 ): Promise<void> {
-  const { agent, skills, mcpManager, snapshotManager, model } = await createAgent(
+  const {
+    agent,
+    skills,
+    mcpManager,
+    snapshotManager,
+    model,
+    apiKey,
+    provider,
+    baseUrl,
+    contextWindow,
+    effectiveTemperature,
+  } = await createAgent(
     modelOverride,
     maxTurns,
     debug,
@@ -221,7 +232,13 @@ async function startChat(
   process.once("SIGINT", () => void onExit());
 
   process.stdout.write(`\n${PRODUCT_NAME}\n\n${model}\n\n`);
-  await runRepl(agent, skills, resumeSessionId, onExit, snapshotManager);
+  await runRepl(agent, skills, resumeSessionId, onExit, snapshotManager, {
+    apiKey,
+    provider,
+    baseUrl,
+    contextWindow,
+    temperature: effectiveTemperature,
+  });
   await cleanup(); // normal exit (Ctrl+D or /exit)
 }
 
@@ -468,5 +485,16 @@ async function createAgent(
     contextWindow,
     provider,
   });
-  return { agent, skills, mcpManager, snapshotManager, model };
+  return {
+    agent,
+    skills,
+    mcpManager,
+    snapshotManager,
+    model,
+    apiKey,
+    provider,
+    baseUrl,
+    contextWindow,
+    effectiveTemperature,
+  };
 }

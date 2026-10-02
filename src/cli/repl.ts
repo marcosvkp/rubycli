@@ -14,6 +14,18 @@ import { createConfirmFn } from "./confirm.js";
 import { runAgentTurn } from "./runner.js";
 import { runPlanFlow } from "./plan.js";
 import type { SnapshotManager } from "../state/snapshot.js";
+import { fetchRemoteModels } from "./models.js";
+import { createClient, createCompactionClient } from "../providers/factory.js";
+import { redactRubyKey } from "../rubycli.js";
+
+/** Session-scoped connection info the REPL needs for /model switching. */
+export interface ReplConnection {
+  apiKey?: string;
+  provider: string;
+  baseUrl: string;
+  contextWindow?: number;
+  temperature?: number;
+}
 
 // Built-in slash commands (always available)
 const BUILTIN_COMMANDS: SlashCommand[] = [
@@ -21,6 +33,7 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: "plan", description: "explore and draft a plan, then approve before executing" },
   { name: "compact", description: "summarize older conversation history to free context" },
   { name: "context", description: "show current token usage vs. context window" },
+  { name: "model", description: "show or switch the session model (lists API models)" },
   { name: "rewind", description: "undo agent file changes since last snapshot" },
   { name: "undo", description: "remove the last user message and agent response from history" },
   { name: "clear", description: "clear conversation history" },
@@ -33,6 +46,7 @@ export async function runRepl(
   resumeSessionId?: string,
   onExit?: () => Promise<void>,
   snapshotManager?: SnapshotManager,
+  connection?: ReplConnection,
 ): Promise<void> {
   const { confirmFn, forcesConfirmation } = await createConfirmFn();
   agent.setConfirmFn(confirmFn);
@@ -151,6 +165,14 @@ export async function runRepl(
       continue;
     }
 
+    // /model — show or switch the session model.
+    // Bare "/model" lists API models (when a key is available) and the current
+    // one; "/model <name-or-number>" switches for this session only.
+    if (input === "/model" || input.startsWith("/model ")) {
+      await handleModelCommand(agent, input.slice(6).trim(), connection);
+      continue;
+    }
+
     // /rewind — restore working tree to pre-write snapshot
     if (input === "/rewind") {
       if (snapshotManager && !snapshotManager.snapshotEnabled) {
@@ -246,6 +268,77 @@ export async function runRepl(
 
   await saveHistory(history, cwd);
   process.stdout.write(chalk.gray("Goodbye.\n"));
+}
+
+// ── /model ────────────────────────────────────────────────────────────────────
+
+/**
+ * Show or switch the session model.
+ *
+ * - `/model` → lists models from GET <baseUrl>/models (when an API key is
+ *   available) with the current one marked; falls back to the current model
+ *   alone when the list can't be fetched.
+ * - `/model <name-or-number>` → switches the session to that model without
+ *   touching the persisted default. Numbers refer to the last listing order.
+ */
+async function handleModelCommand(
+  agent: Agent,
+  arg: string,
+  connection?: ReplConnection,
+): Promise<void> {
+  const current = agent.getModel();
+
+  if (!arg) {
+    const { models, error } = connection
+      ? await fetchRemoteModels(connection.baseUrl, connection.apiKey)
+      : { models: [], error: "No connection info." };
+    if (models.length === 0) {
+      printInfo(`Current model: ${current}`);
+      if (error) printInfo(`(could not list API models: ${redactRubyKey(error)})`);
+      printInfo(`Usage: /model <name>`);
+      return;
+    }
+    printInfo("Available models:");
+    models.forEach((m, i) => {
+      const marker = m.id === current ? chalk.green("●") : " ";
+      process.stderr.write(`${marker} ${chalk.bold(`${i + 1}.`)} ${m.id}\n`);
+    });
+    printInfo(`\nCurrent: ${current} — switch with /model <name-or-number>`);
+    return;
+  }
+
+  // Resolve numeric shortcuts against a fresh listing; otherwise take the arg as-is.
+  let target = arg;
+  if (/^\d+$/.test(arg) && connection) {
+    const { models } = await fetchRemoteModels(connection.baseUrl, connection.apiKey);
+    const picked = models[parseInt(arg, 10) - 1];
+    if (!picked) {
+      printError(`No model #${arg}. Run /model to see the list.`);
+      return;
+    }
+    target = picked.id;
+  }
+
+  try {
+    const provider = connection?.provider ?? "rubycli";
+    const client = createClient(target, connection?.apiKey ?? "", {
+      includeUsage: true,
+      maxTokens: undefined,
+      provider,
+      baseUrl: connection?.baseUrl,
+      temperature: connection?.temperature,
+    });
+    const compactionClient = createCompactionClient(target, connection?.apiKey ?? "", {
+      provider,
+      baseUrl: connection?.baseUrl,
+    });
+    agent.setModel(target, client, compactionClient, connection?.contextWindow, provider);
+    printInfo(`Switched to ${target} (session only — default unchanged).`);
+  } catch (err) {
+    printError(
+      `Could not switch model: ${redactRubyKey(err instanceof Error ? err.message : String(err))}`,
+    );
+  }
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
