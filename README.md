@@ -16,21 +16,36 @@ Requires Node.js 20+.
 npm install -g @rubyclii/cli
 ```
 
-Or run from a clone of this repository:
+Or run without installing:
 
 ```bash
-npm install
-npm run build
-npm link
+npx @rubyclii/cli
 ```
 
-## Usage
+Verify the install:
+
+```bash
+ruby --version
+```
+
+## Quickstart
 
 ```bash
 ruby
 ```
 
-starts the interactive agent. One-shot prompts:
+On first run you will be asked for your RubyCLI API key (get one from your
+[RubyCLI Cloud dashboard](https://app.rubycli.cloud)). The key is validated
+against the API and stored locally at `~/.rubycli/config.json` — never
+committed, never logged in full.
+
+Then just type what you want:
+
+```text
+> Analyze this project and find possible bugs
+```
+
+One-shot prompts (great for scripts and CI):
 
 ```bash
 ruby run "Analyze this project and find possible bugs"
@@ -38,18 +53,40 @@ ruby run "Analyze this project and find possible bugs"
 
 ## API Key
 
-On first run you will be prompted to paste your RubyCLI API key. It is
-validated against the RubyCLI API and stored locally at
-`~/.rubycli/config.json` (never committed, never logged in full).
+Three ways to provide the key, in priority order:
 
-You can also provide the key via environment variable — useful for CI/CD.
-An env-provided key is never persisted automatically:
+1. **Environment variable** (best for CI/CD — never persisted automatically):
 
-```bash
-export RUBYCLI_API_KEY=ruby_sk_...
-```
+   ```bash
+   export RUBYCLI_API_KEY=ruby_sk_...
+   ```
 
-Priority: `RUBYCLI_API_KEY` env var → local config → interactive prompt.
+2. **Local config** (saved by the first-run prompt or explicitly):
+
+   ```bash
+   ruby config --api-key <key>
+   ```
+
+3. **Interactive prompt** on first run.
+
+Manage or rotate the key any time with `ruby config --api-key <new-key>`.
+
+## Commands
+
+| Command              | What it does                              |
+| -------------------- | ----------------------------------------- |
+| `ruby`               | Start the interactive agent (default)     |
+| `ruby run "<prompt>"` | Run a single prompt and exit             |
+| `ruby sessions`      | List recent sessions for the current dir  |
+| `ruby config`        | View config (keys are masked)             |
+| `ruby config --api-key <key>` | Save the API key               |
+| `ruby config --model <model>` | Set the default model          |
+| `ruby config --base-url <url>` | Custom API endpoint           |
+| `ruby model [model]` | Show or set the default model             |
+| `ruby mcp ...`       | Manage MCP servers (`list`, `add`, ...)   |
+
+Inside the interactive session, type `/help` for slash commands
+(`/model`, `/config`, `/compact`, `/plan`, ...).
 
 ## Configuration
 
@@ -64,15 +101,23 @@ ruby model <model>               # shortcut to set the default model
 
 Environment variables:
 
-| Variable           | Purpose                              |
-| ------------------ | ------------------------------------ |
-| `RUBYCLI_API_KEY`  | API key (highest priority)           |
-| `RUBYCLI_BASE_URL` | Override the API endpoint            |
-| `RUBYCLI_MODEL`    | Override the default model           |
+| Variable           | Purpose                                              |
+| ------------------ | ---------------------------------------------------- |
+| `RUBYCLI_API_KEY`  | API key (highest priority, never auto-persisted)     |
+| `RUBYCLI_BASE_URL` | Override the API endpoint (default: `https://app.rubycli.cloud/v1`) |
+| `RUBYCLI_MODEL`    | Override the default model                           |
 | `RUBYCLI_DEBUG=1`  | Debug output (endpoint, timing, usage — never the key) |
 
 The default model is `ruby-auto` — the RubyCLI backend routes it to the best
 available provider. You never need to pick a provider.
+
+After each response the CLI prints a compact status line:
+
+```text
+ruby-auto │ 31.4k/200k │ ↑31.3k ↓1.1k │ 87 tok/s │ TTFT 420ms
+```
+
+(model │ context used/limit │ input/output tokens │ generation speed │ time to first token)
 
 ## Development
 
