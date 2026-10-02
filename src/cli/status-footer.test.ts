@@ -10,14 +10,14 @@ function forceTty(cols: number, rows: number): void {
 
 describe("status-footer", () => {
   const writes: string[] = [];
-  let writeSpy: ReturnType<typeof vi.spyOn>;
+  let writeSpy: { mockRestore: () => void };
 
   beforeEach(() => {
     writes.length = 0;
-    writeSpy = vi.spyOn(stdout, "write").mockImplementation(((s: string) => {
-      writes.push(s);
+    writeSpy = vi.spyOn(stdout, "write").mockImplementation(((s: unknown) => {
+      writes.push(String(s));
       return true;
-    }) as typeof stdout.write);
+    }) as unknown as typeof stdout.write);
     forceTty(80, 24);
     releaseFooter();
     writes.length = 0;

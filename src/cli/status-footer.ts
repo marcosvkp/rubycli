@@ -1,4 +1,4 @@
-import { stdout } from "node:process";
+import { stdout, env } from "node:process";
 import { stripVTControlCharacters } from "node:util";
 
 /**
@@ -9,8 +9,10 @@ import { stripVTControlCharacters } from "node:util";
  * *above* the footer and the status line stays visually fixed. The footer is
  * redrawn in place on every `update()` without disturbing scrollback.
  *
- * Non-TTY output is a no-op (piped runs keep plain streaming). If the
- * terminal reports no usable size, activation is skipped silently.
+ * Non-TTY output is a no-op (piped runs keep plain streaming). When the
+ * terminal size is unavailable (Windows ConPTY doesn't report rows/cols on
+ * process.stdout), fall back to sensible defaults if the env suggests an
+ * interactive terminal window.
  */
 
 const FOOTER_ROWS = 2; // status line + mode line
@@ -20,9 +22,22 @@ let lastStatus = "";
 let lastMode = "";
 
 function termSize(): { cols: number; rows: number } | null {
-  const cols = stdout.columns ?? 0;
-  const rows = stdout.rows ?? 0;
-  if (!stdout.isTTY || cols < 20 || rows < FOOTER_ROWS + 3) return null;
+  if (!stdout.isTTY) return null;
+  // Windows ConPTY often leaves stdout.rows/columns undefined even in a real
+  // interactive window; use env hints before giving up.
+  let cols = stdout.columns ?? 0;
+  let rows = stdout.rows ?? 0;
+  if ((!cols || !rows) && env.TERM_PROGRAM === "vscode") {
+    cols = cols || 120;
+    rows = rows || 30;
+  }
+  if (!cols || !rows) {
+    // Last resort for interactive Windows terminals (ConPTY): 80x24 is the
+    // safe floor — footer rows are re-resolved on resize via render checks.
+    cols = 80;
+    rows = 24;
+  }
+  if (cols < 20 || rows < FOOTER_ROWS + 3) return null;
   return { cols, rows };
 }
 
@@ -103,3 +118,16 @@ export function updateFooter(status: string, mode: string): void {
 export function footerRows(): number {
   return active ? FOOTER_ROWS : 0;
 }
+
+// Re-apply the scroll region + redraw when the terminal resizes, otherwise a
+// stale region breaks scrolling after a window resize.
+stdout.on?.("resize", () => {
+  if (!active) return;
+  const size = termSize();
+  if (!size) {
+    releaseFooter();
+    return;
+  }
+  stdout.write(`\x1b[1;${size.rows - FOOTER_ROWS}r` + `\x1b[${size.rows - FOOTER_ROWS};1H`);
+  draw(lastStatus, lastMode);
+});
