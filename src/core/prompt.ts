@@ -242,6 +242,7 @@ After every code change:
 - **bash long-running servers**: use \`nohup CMD > log 2>&1 < /dev/null &\` to background dev servers and daemons — all three FDs must be redirected so the shell can return immediately. Never end an \`&&\` chain with a backgrounded long-running command (e.g. \`A && B && server &\`) — the backgrounded subshell inherits stdio pipes and the call will hang until timeout. After starting, verify with \`sleep 2 && curl -s localhost:PORT\` or \`tail log\`.
 - **think**: use before starting any change that touches more than two files; reason through the approach and order of changes
 - **todo_write**: for tasks with more than three steps, write the steps first and check them off as you go
+- **task**: delegate INDEPENDENT exploration to a read-only sub-agent (e.g. "how does auth work?", "find all API endpoints") while you continue other work. The sub-agent returns a text summary — it cannot edit files or run commands, so never use it for work that requires edits. Prefer it over doing broad exploration yourself when you have parallel questions; act directly for simple lookups a single grep/read can answer.
 
 ## Exploration
 

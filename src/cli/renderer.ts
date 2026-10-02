@@ -17,6 +17,7 @@ export const COMPACT_TOOLS = new Set([
   "think",
   "todo_read",
   "todo_write",
+  "task",
 ]);
 
 export function renderMarkdown(text: string): string {
@@ -161,6 +162,12 @@ export function printToolCallCompact(name: string, args: Record<string, unknown>
     process.stderr.write(chalk.dim("  ○ todo   reading task list") + "\n");
     return;
   }
+  if (name === "task") {
+    const q = typeof args.prompt === "string" ? args.prompt : "";
+    const short = q.length > 80 ? q.slice(0, 77) + "…" : q;
+    process.stderr.write(chalk.dim(`  ○ task   exploring: ${short}`) + "\n");
+    return;
+  }
   const arg = compactArg(args);
   process.stderr.write(chalk.dim(`  ○ ${name.padEnd(6)}${arg}`) + "\n");
 }
@@ -269,6 +276,13 @@ export function summariseResult(name: string, result: string): string {
   if (name === "ls") {
     const entries = trimmed && trimmed !== "(empty directory)" ? trimmed.split("\n").length : 0;
     return `ls    ${chalk.dim(`${entries} entr${entries === 1 ? "y" : "ies"}`)}`;
+  }
+  if (name === "task") {
+    const size =
+      trimmed.length >= 1000
+        ? `${(trimmed.length / 1000).toFixed(1)}k chars`
+        : `${trimmed.length} chars`;
+    return `task  ${chalk.dim(`→ ${size}`)}`;
   }
   if (name === "todo_write" || name === "todo_read") {
     const lines = trimmed ? trimmed.split("\n") : [];

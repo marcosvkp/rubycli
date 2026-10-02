@@ -9,6 +9,7 @@ export { createBashTool } from "./exec/bash.js";
 export { thinkTool } from "./think.js";
 export { webFetchTool } from "./web/fetch.js";
 export { todoWriteTool, todoReadTool } from "./task/todo.js";
+export { createTaskTool, type SpawnSubAgentFn } from "./task/subagent.js";
 export { ToolRegistry } from "./registry.js";
 export type { Tool } from "./base.js";
 
@@ -24,6 +25,7 @@ import { createBashTool } from "./exec/bash.js";
 import { thinkTool } from "./think.js";
 import { webFetchTool } from "./web/fetch.js";
 import { todoWriteTool, todoReadTool } from "./task/todo.js";
+import { createTaskTool, type SpawnSubAgentFn } from "./task/subagent.js";
 import { hasNativeThinking } from "../providers/factory.js";
 import { PassthroughRunner } from "./exec/sandbox/passthrough.js";
 import type { SandboxRunner } from "./exec/sandbox/types.js";
@@ -34,7 +36,11 @@ import type { SandboxRunner } from "./exec/sandbox/types.js";
  * with native thinking/reasoning (e.g. Gemini 2.5+) since their built-in
  * reasoning is cheaper and faster than a tool-call round-trip.
  */
-export function createDefaultRegistry(model?: string, runner?: SandboxRunner): ToolRegistry {
+export function createDefaultRegistry(
+  model?: string,
+  runner?: SandboxRunner,
+  opts?: { spawnSubAgent?: SpawnSubAgentFn },
+): ToolRegistry {
   const registry = new ToolRegistry();
   const effectiveRunner = runner ?? new PassthroughRunner("off");
   const tools = [
@@ -49,6 +55,7 @@ export function createDefaultRegistry(model?: string, runner?: SandboxRunner): T
     webFetchTool,
     todoWriteTool,
     todoReadTool,
+    createTaskTool(opts?.spawnSubAgent),
   ];
 
   if (!model || !hasNativeThinking(model)) {

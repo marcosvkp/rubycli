@@ -138,8 +138,19 @@ export function bumpRequired(toolName: string, untrustedConsumed: boolean): bool
     toolName === "write" ||
     toolName === "edit" ||
     toolName === "multi_edit" ||
+    // A sub-agent's summary is untrusted content by definition — spending more
+    // inference/tokens on it is an outbound action that must stay gated.
+    toolName === "task" ||
     toolName.startsWith("mcp__")
   );
+}
+
+/**
+ * `task` output is a sub-agent summary — untrusted content by definition, so a
+ * turn that consumed it must keep the confirmation gate armed.
+ */
+export function isUntrustedResult(toolName: string): boolean {
+  return toolName === "task";
 }
 
 async function executeOneCall(
@@ -222,7 +233,9 @@ async function executeOneCall(
     // Provenance tag (#309): marks this result as having delivered untrusted
     // content, which the agent loop reads to keep the confirmation bump armed
     // for the rest of the turn.
-    ...(isUntrustedSource(call.name, args) ? { untrusted: true } : {}),
+    ...(isUntrustedSource(call.name, args) || isUntrustedResult(call.name)
+      ? { untrusted: true }
+      : {}),
   };
 }
 

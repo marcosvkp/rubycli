@@ -9,7 +9,7 @@ import {
 import { resolveContextWindow } from "./context-window.js";
 import { fetchRemoteModels, remoteContextWindow } from "./models.js";
 import { Agent } from "../core/agent.js";
-import { createDefaultRegistry } from "../tools/index.js";
+import { createDefaultRegistry, ToolRegistry } from "../tools/index.js";
 import { SkillRegistry } from "../skills/registry.js";
 import { loadConfig, saveConfig, AGENT_DIR } from "../state/config.js";
 import { Session } from "../state/session.js";
@@ -476,7 +476,43 @@ async function createAgent(
     temperature: effectiveTemperature,
     onWarn: debugOn ? (msg) => process.stderr.write(`[${CLI_COMMAND}] warn: ${msg}\n`) : undefined,
   });
-  const tools = createDefaultRegistry(model, runner);
+  // Sub-agent spawner for the `task` tool (explore MVP): a child Agent with
+  // fresh context, read-only tools, and no `task` of its own (depth 1, no
+  // recursion). Shares the parent's provider/model/key/baseUrl.
+  const spawnSubAgent = async (prompt: string, opts: { maxTurns: number }): Promise<string> => {
+    const full = createDefaultRegistry(model, runner);
+    // The child is explore-only: keep read-only tools, drop writes, bash,
+    // MCP, and `task` itself (no nested delegation).
+    const childRegistry = new ToolRegistry();
+    for (const t of full.all()) {
+      if (t.readonly && t.name !== "task") {
+        childRegistry.register(t);
+      }
+    }
+    const childSkills = new SkillRegistry();
+    await childSkills.discover();
+    const child = new Agent(
+      client,
+      childRegistry,
+      childSkills,
+      systemInstruction,
+      undefined,
+      opts.maxTurns,
+      {
+        model,
+        contextWindow,
+        provider,
+      },
+    );
+    let summary = "";
+    for await (const event of child.run(prompt, "react")) {
+      if (event.type === "text") summary += event.text;
+      if (event.type === "error") throw new Error(event.message);
+      if (event.type === "done") break;
+    }
+    return summary.trim();
+  };
+  const tools = createDefaultRegistry(model, runner, { spawnSubAgent });
 
   // Load and connect MCP servers, registering their tools into the registry
   const mcpConfig = await loadMcpConfig(AGENT_DIR);
