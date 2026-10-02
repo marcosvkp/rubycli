@@ -1,6 +1,6 @@
 {
   "name": "@rubyclii/cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "RubyCLI — AI coding agent powered by RubyCLI Cloud. Derived from OpenCLI (MIT).",
   "type": "module",
   "bin": {
