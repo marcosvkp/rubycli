@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "📦 Preparing to publish @rubycli/cli..."
+echo "📦 Preparing to publish @rubyclii/cli..."
 
 # Ensure we are logged in
 if ! npm whoami > /dev/null 2>&1; then
@@ -31,4 +31,4 @@ else
 fi
 
 echo "✅ Successfully published! You can now install it globally using:"
-echo "   npm install -g @rubycli/cli"
+echo "   npm install -g @rubyclii/cli"

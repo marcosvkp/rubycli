@@ -9,7 +9,7 @@
 
 export const PRODUCT_NAME = "RubyCLI";
 export const CLI_COMMAND = "ruby";
-export const NPM_PACKAGE = "@rubycli/cli";
+export const NPM_PACKAGE = "@rubyclii/cli";
 
 /** Config/state directory: ~/.rubycli */
 export const AGENT_DIR_NAME = ".rubycli";

@@ -13,7 +13,7 @@ the task; the agent reads, edits, and runs code in your project until it's done.
 Requires Node.js 20+.
 
 ```bash
-npm install -g @rubycli/cli
+npm install -g @rubyclii/cli
 ```
 
 Or run from a clone of this repository:
