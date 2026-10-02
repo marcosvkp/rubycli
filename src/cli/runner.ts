@@ -132,10 +132,12 @@ export async function runAgentTurn(
           void session.log({ type: "assistant", content: turnText });
           turnText = "";
           // Compact post-turn status line (model │ ctx │ io │ tok/s │ TTFT).
+          // The window comes from the Agent (API-reported when available),
+          // never the static registry — unknown models would show 128k.
           if (turnInput > 0 || turnOutput > 0) {
             const { calcTokensPerSecond, formatStatusLine } = await import("../core/metrics.js");
-            const { contextWindowFor } = await import("../core/compact.js");
             const model = agent.getModel?.() ?? "";
+            const agentWindow = agent.getContextStats().contextWindow;
             const tps =
               turnFirstTokenAt !== undefined && turnLastEndAt !== undefined
                 ? calcTokensPerSecond(turnOutput, turnFirstTokenAt, turnLastEndAt)
@@ -152,7 +154,7 @@ export async function runAgentTurn(
                 totalTokens: turnInput + turnOutput,
               },
               estimated: false,
-              contextWindow: contextWindowFor(model),
+              contextWindow: agentWindow,
             });
             process.stdout.write(`\n${chalk.dim(line)}\n`);
             // Reset per-turn accumulators (a single runAgentTurn may yield multiple dones).
