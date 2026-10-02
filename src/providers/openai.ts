@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import type { LLMClient } from "./client.js";
 import type { Message, StreamEvent, ToolDefinition } from "./types.js";
 import { withRetry } from "./retry.js";
-import { toFriendlyError } from "./errors.js";
+import { toFriendlyError, type ProviderName } from "./errors.js";
 import { salvageToolCalls, contentIsOnlyToolCalls } from "./salvage.js";
 
 const DEFAULT_MAX_TOKENS = 8096;
@@ -63,6 +63,8 @@ export class OpenAIClient implements LLMClient {
   private maxTokens: number;
   private temperature: number | undefined;
   private salvage: boolean;
+  private providerLabel: string;
+  private keyHint?: string;
   private onWarn?: (message: string) => void;
 
   constructor(
@@ -75,6 +77,10 @@ export class OpenAIClient implements LLMClient {
       temperature?: number;
       /** Recover tool calls emitted as plain text. Enabled for OSS/local presets. */
       salvage?: boolean;
+      /** Human label used in friendly error messages (defaults to "[OI]"). */
+      providerLabel?: string;
+      /** Remediation hint for 401 errors, composed by the CLI layer. */
+      keyHint?: string;
       /** Non-fatal diagnostics. Injected so this layer stays free of direct stderr
        *  writes, which `core/` and `providers/` must not perform. */
       onWarn?: (message: string) => void;
@@ -86,6 +92,8 @@ export class OpenAIClient implements LLMClient {
     this.maxTokens = options?.maxTokens ?? DEFAULT_MAX_TOKENS;
     this.temperature = options?.temperature;
     this.salvage = options?.salvage ?? false;
+    this.providerLabel = options?.providerLabel ?? "[OI]";
+    this.keyHint = options?.keyHint;
     this.onWarn = options?.onWarn;
   }
 
@@ -118,7 +126,7 @@ export class OpenAIClient implements LLMClient {
         },
       );
     } catch (err) {
-      throw toFriendlyError(err, "OpenAI");
+      throw toFriendlyError(err, this.providerLabel as ProviderName, this.keyHint);
     }
   }
 
@@ -140,6 +148,9 @@ export class OpenAIClient implements LLMClient {
     const pendingCalls = new Map<number, { id: string; name: string; args: string }>();
     let inputTokens = 0;
     let outputTokens = 0;
+    let cachedTokens: number | undefined;
+    let reasoningTokens: number | undefined;
+    let totalTokens: number | undefined;
     let emittedCalls = 0;
 
     // Salvage needs the full text before it can tell a tool call from prose, but
@@ -153,6 +164,17 @@ export class OpenAIClient implements LLMClient {
       if (chunk.usage) {
         inputTokens = chunk.usage.prompt_tokens;
         outputTokens = chunk.usage.completion_tokens;
+        totalTokens = chunk.usage.total_tokens;
+        const details = chunk.usage as {
+          prompt_tokens_details?: { cached_tokens?: number };
+          completion_tokens_details?: { reasoning_tokens?: number };
+        };
+        if (details.prompt_tokens_details?.cached_tokens !== undefined) {
+          cachedTokens = details.prompt_tokens_details.cached_tokens;
+        }
+        if (details.completion_tokens_details?.reasoning_tokens !== undefined) {
+          reasoningTokens = details.completion_tokens_details.reasoning_tokens;
+        }
       }
 
       const choice = chunk.choices[0];
@@ -228,7 +250,14 @@ export class OpenAIClient implements LLMClient {
     }
 
     if (inputTokens > 0 || outputTokens > 0) {
-      yield { type: "usage", inputTokens, outputTokens };
+      yield {
+        type: "usage",
+        inputTokens,
+        outputTokens,
+        ...(cachedTokens !== undefined ? { cachedTokens } : {}),
+        ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+        ...(totalTokens !== undefined ? { totalTokens } : {}),
+      };
     }
     yield { type: "done" };
   }

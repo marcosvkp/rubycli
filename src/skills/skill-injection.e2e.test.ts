@@ -15,7 +15,7 @@ describe("Skill injection visible to next LLM turn (E2E)", () => {
     const root = await mkdtemp(join(tmpdir(), "opencli-skill-e2e-"));
     try {
       // Create a real SKILL.md on disk so SkillRegistry.discover() picks it up
-      const skillDir = join(root, ".opencli", "skills", "test-skill");
+      const skillDir = join(root, ".rubycli", "skills", "test-skill");
       await mkdir(skillDir, { recursive: true });
       await writeFile(
         join(skillDir, "SKILL.md"),
@@ -78,7 +78,7 @@ SKILL_BODY_SENTINEL: do the test-skill thing`,
   it("does not re-inject a skill that is already active in context", async () => {
     const root = await mkdtemp(join(tmpdir(), "opencli-skill-e2e-"));
     try {
-      const skillDir = join(root, ".opencli", "skills", "dup-skill");
+      const skillDir = join(root, ".rubycli", "skills", "dup-skill");
       await mkdir(skillDir, { recursive: true });
       await writeFile(
         join(skillDir, "SKILL.md"),

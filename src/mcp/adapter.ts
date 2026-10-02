@@ -3,7 +3,7 @@ import type { McpClient } from "./client.js";
 import type { McpToolInfo } from "./types.js";
 
 /**
- * Bridges one MCP tool into an OpenCLI Tool.
+ * Bridges one MCP tool into a RubyCLI Tool.
  *
  * Name format: mcp__<sanitisedServerName>__<toolName>
  * (double-underscore, matching Claude Code's convention for compatibility)

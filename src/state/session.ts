@@ -2,7 +2,7 @@
  * Session management — stores per-session conversation logs as JSONL files.
  *
  * Storage layout (mirrors Claude Code's pattern):
- *   ~/.opencli/projects/<encoded-cwd>/<session-id>.jsonl
+ *   ~/.rubycli/projects/<encoded-cwd>/<session-id>.jsonl
  *
  * Sessions are never written to the project directory itself, keeping the
  * workspace clean. The project path is encoded using base64url to prevent collisions.
@@ -212,7 +212,7 @@ function reconstructMessages(entries: SessionEntry[]): Message[] {
       flushCalls();
       if (pendingCallMeta.length === 0) {
         process.stderr.write(
-          `[opencli] warn: orphaned tool_result for "${entry.name}" (no matching tool_call) — skipping\n`,
+          `[rubycli] warn: orphaned tool_result for "${entry.name}" (no matching tool_call) — skipping\n`,
         );
         continue;
       }
@@ -316,7 +316,7 @@ export class Session {
 
   /** Scratch directory for agent-generated temporary files, scoped to this session. */
   get tmpDir(): string {
-    return join(this.cwd, ".opencli", "tmp", this.id);
+    return join(this.cwd, ".rubycli", "tmp", this.id);
   }
 
   static async create(cwd: string = process.cwd()): Promise<Session> {
@@ -381,7 +381,7 @@ export class Session {
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
         throw new Error(
-          `Session '${sessionId}' not found for this directory. Run 'opencli sessions' to list available sessions.`,
+          `Session '${sessionId}' not found for this directory. Run 'ruby sessions' to list available sessions.`,
           { cause: err },
         );
       }
@@ -394,7 +394,7 @@ export class Session {
         try {
           return [JSON.parse(line) as SessionEntry];
         } catch {
-          process.stderr.write("[opencli] skipping malformed session log entry\n");
+          process.stderr.write("[rubycli] skipping malformed session log entry\n");
           return [];
         }
       });

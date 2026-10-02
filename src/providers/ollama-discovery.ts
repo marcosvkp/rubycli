@@ -4,7 +4,7 @@
  * A static table cannot describe local models: the set is whatever the user has pulled,
  * and the context window is per-model and further adjustable via a Modelfile's `num_ctx`.
  * Getting this wrong is not cosmetic — a stock `qwen2.5-coder:14b` reports 32 768 tokens,
- * well under the 100 000 static default, so without discovery OpenCLI believes it has 3x
+ * well under the 100 000 static default, so without discovery the CLI believes it has 3x
  * more room than it does and never compacts before the model silently truncates.
  *
  * `GET /api/tags` returns context length and capabilities for every installed model in a
@@ -125,7 +125,7 @@ export function toolSupportWarning(models: OllamaModel[], name: string): string 
   return (
     `Ollama model '${name}' does not advertise tool-calling support ` +
     `(capabilities: ${model.capabilities.join(", ")}). ` +
-    `OpenCLI needs tools to run its agent loop; expect it to be unable to edit files or run commands. ` +
+    `RubyCLI needs tools to run its agent loop; expect it to be unable to edit files or run commands. ` +
     `Try a tool-capable model such as qwen2.5-coder.`
   );
 }

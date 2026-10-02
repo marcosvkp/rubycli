@@ -27,6 +27,28 @@ export async function runAgentTurn(
   const pendingEdits: { file_path: string; old_string: string; new_string: string }[] = [];
   let fullText = "";
   let turnText = "";
+  // Turn-level metrics aggregation (sums across all LLM calls this turn).
+  let turnInput = 0;
+  let turnOutput = 0;
+  let turnCached: number | undefined;
+  let turnReasoning: number | undefined;
+  let turnFirstTtft: number | undefined;
+  let turnFirstTokenAt: number | undefined;
+  let turnLastEndAt: number | undefined;
+  const turnStartAt = Date.now();
+  agent.setMetricsSink?.({
+    onCallEnd: (e) => {
+      turnInput += e.inputTokens;
+      turnOutput += e.outputTokens;
+      if (e.cachedTokens !== undefined) turnCached = (turnCached ?? 0) + e.cachedTokens;
+      if (e.reasoningTokens !== undefined) turnReasoning = (turnReasoning ?? 0) + e.reasoningTokens;
+      if (e.firstTokenLatencyMs !== undefined && turnFirstTtft === undefined) {
+        turnFirstTtft = e.firstTokenLatencyMs;
+        turnFirstTokenAt = turnStartAt + e.firstTokenLatencyMs;
+      }
+      turnLastEndAt = Date.now();
+    },
+  });
 
   try {
     for await (const event of agent.run(userMessage, mode)) {
@@ -104,12 +126,46 @@ export async function runAgentTurn(
           spinner.scheduleStart();
           break;
 
-        case "done":
+        case "done": {
           spinner.stop();
           mdRenderer.flush();
           void session.log({ type: "assistant", content: turnText });
           turnText = "";
+          // Compact post-turn status line (model │ ctx │ io │ tok/s │ TTFT).
+          if (turnInput > 0 || turnOutput > 0) {
+            const { calcTokensPerSecond, formatStatusLine } = await import("../core/metrics.js");
+            const { contextWindowFor } = await import("../core/compact.js");
+            const model = agent.getModel?.() ?? "";
+            const tps =
+              turnFirstTokenAt !== undefined && turnLastEndAt !== undefined
+                ? calcTokensPerSecond(turnOutput, turnFirstTokenAt, turnLastEndAt)
+                : undefined;
+            const line = formatStatusLine({
+              model,
+              ttftMs: turnFirstTtft,
+              tokensPerSecond: tps,
+              usage: {
+                inputTokens: turnInput,
+                outputTokens: turnOutput,
+                ...(turnCached !== undefined ? { cachedTokens: turnCached } : {}),
+                ...(turnReasoning !== undefined ? { reasoningTokens: turnReasoning } : {}),
+                totalTokens: turnInput + turnOutput,
+              },
+              estimated: false,
+              contextWindow: contextWindowFor(model),
+            });
+            process.stdout.write(`\n${chalk.dim(line)}\n`);
+            // Reset per-turn accumulators (a single runAgentTurn may yield multiple dones).
+            turnInput = 0;
+            turnOutput = 0;
+            turnCached = undefined;
+            turnReasoning = undefined;
+            turnFirstTtft = undefined;
+            turnFirstTokenAt = undefined;
+            turnLastEndAt = undefined;
+          }
           break;
+        }
       }
     }
   } catch (err) {

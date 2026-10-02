@@ -10,7 +10,7 @@ interface TodoItem {
 }
 
 // Each process run (= one CLI session) gets its own todo file.
-const TODO_PATH = join(tmpdir(), `opencli-todo-${process.pid}.json`);
+const TODO_PATH = join(tmpdir(), `rubycli-todo-${process.pid}.json`);
 
 export const todoWriteTool: Tool = {
   name: "todo_write",

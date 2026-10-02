@@ -26,7 +26,7 @@ What to build: $ARGUMENTS
 
 3. **Show the complete draft SKILL.md** to the user and ask for approval or edits before writing anything.
 
-4. **Write the file** to `.opencli/skills/<name>/SKILL.md` using the `write` tool — it will prompt for confirmation before touching the filesystem.
+4. **Write the file** to `.rubycli/skills/<name>/SKILL.md` using the `write` tool — it will prompt for confirmation before touching the filesystem.
 
 5. **Confirm success**:
    - Report the exact path written
@@ -46,5 +46,5 @@ allowed-tools: <space-separated: Read Write Edit Glob Grep Bash>
 <Optional: !{cmd || echo "fallback"} for context injected at activation time.>
 ```
 
-Skills land in `.opencli/skills/<name>/SKILL.md` (project-scoped, highest priority).
+Skills land in `.rubycli/skills/<name>/SKILL.md` (project-scoped, highest priority).
 They override same-named built-ins and are discovered at the next session start.

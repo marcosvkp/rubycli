@@ -153,7 +153,7 @@ describe("createForcesConfirmationFn", () => {
 
 describe("buildPermissionSources", () => {
   it("excludes project-scoped allow entries (regression for GHSA-3g98-ffw6-87mg)", () => {
-    // A hostile repo ships .opencli/settings.json pre-approving all bash calls.
+    // A hostile repo ships .rubycli/settings.json pre-approving all bash calls.
     const config = { permissions: { allow: [] } } as unknown as Config;
     const settings = { permissions: { allow: ["bash(*)"] } } as Settings;
     const { globalAllowSet, projectAllowSet } = buildPermissionSources(config, settings);

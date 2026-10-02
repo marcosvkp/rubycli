@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, stat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-// Isolate ~/.opencli from the real home.
+// Isolate ~/.rubycli from the real home.
 const tmpHome = join(tmpdir(), `opencli-projperm-test-${Date.now()}`);
 
 vi.mock("node:os", async (importOriginal) => {
@@ -53,14 +53,18 @@ describe("project-permissions storage (#308)", () => {
     expect((await loadProjectPermissions(projectB)).allow).toEqual([]);
   });
 
-  it("keys files by the full sha256 of the cwd", async () => {
+  // Windows path separators: join() emits backslashes, so the forward-slash
+  // regex below would fail. The sha256 keying itself is platform-independent.
+  it.skipIf(process.platform === "win32")("keys files by the full sha256 of the cwd", async () => {
     const fileA = projectPermissionsFile(projectA);
     const fileB = projectPermissionsFile(projectB);
     expect(fileA).not.toBe(fileB);
     expect(fileA).toMatch(/project-permissions\/[0-9a-f]{64}\.json$/);
   });
 
-  it("writes owner-only permissions (0o600)", async () => {
+  // Windows has no POSIX chmod: stat().mode always reports 0o666. The permission
+  // guarantee holds on Linux/macOS.
+  it.skipIf(process.platform === "win32")("writes owner-only permissions (0o600)", async () => {
     await saveProjectPermissions(projectA, ["bash:*"]);
     const info = await stat(projectPermissionsFile(projectA));
     expect(info.mode & 0o777).toBe(0o600);

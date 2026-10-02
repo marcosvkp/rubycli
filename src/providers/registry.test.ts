@@ -73,10 +73,11 @@ describe("detectProviderFromRegistry", () => {
   });
 
   it("falls back to the default provider for unrecognised names", () => {
-    // Preserved deliberately: users point --base-url at Gemini-compatible proxies
-    // using non-Gemini model names.
+    // RubyCLI is the product default; gemini detection is preserved for
+    // users pointing --base-url at Gemini-compatible proxies with
+    // non-Gemini model names via --provider gemini.
     expect(detectProviderFromRegistry("unknown-model")).toBe(DEFAULT_PROVIDER);
-    expect(detectProviderFromRegistry("my-proxy")).toBe("gemini");
+    expect(detectProviderFromRegistry("ruby-auto")).toBe("rubycli");
   });
 
   it("prefers the longest matching prefix", () => {

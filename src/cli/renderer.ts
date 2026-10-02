@@ -2,6 +2,7 @@ import chalk from "chalk";
 import boxen from "boxen";
 import * as Diff from "diff";
 import { marked } from "marked";
+import { redactRubyKey } from "../rubycli.js";
 // @ts-expect-error — marked-terminal has no types
 import TerminalRenderer from "marked-terminal";
 
@@ -196,7 +197,8 @@ export function printSkillActivated(name: string): void {
 }
 
 export function printError(message: string): void {
-  process.stderr.write(chalk.red(`Error: ${message}\n`));
+  // Redact API keys defensively — tool/provider errors must never echo secrets.
+  process.stderr.write(chalk.red(`Error: ${redactRubyKey(message)}\n`));
 }
 
 export function printInfo(message: string): void {

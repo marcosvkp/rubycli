@@ -2,13 +2,17 @@ export type ObservabilityEvent =
   /** Emitted before each LLM streaming call. */
   | { type: "llm_call_start"; model: string; inputMessages: number }
   /** Emitted after the LLM stream completes. inputTokens/outputTokens are 0 if the
-   *  provider did not return usage data for this call. */
+   *  provider did not return usage data for this call. firstTokenLatencyMs is the
+   *  TTFT (request start → first streamed token); undefined when no token arrived. */
   | {
       type: "llm_call_end";
       model: string;
       inputTokens: number;
       outputTokens: number;
       latencyMs: number;
+      firstTokenLatencyMs?: number;
+      cachedTokens?: number;
+      reasoningTokens?: number;
     }
   /** Rough token estimate before each LLM call (chars / 4 — for pressure monitoring). */
   | { type: "context_snapshot"; messageCount: number; estimatedTokens: number }

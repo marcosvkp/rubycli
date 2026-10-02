@@ -2,10 +2,10 @@
  * Per-project permission grants stored OUTSIDE the repository.
  *
  * GHSA-3g98-ffw6-87mg closed the confused-deputy attack by ignoring the
- * repo-shipped `.opencli/settings.json` `allow` list entirely — which widened every
+ * repo-shipped `.rubycli/settings.json` `allow` list entirely — which widened every
  * "always allow" grant to global scope. This module restores per-project scoping
  * without giving repo-controlled files any authority: grants live under the user's
- * own `~/.opencli/project-permissions/`, keyed by a hash of the project path, so a
+ * own `~/.rubycli/project-permissions/`, keyed by a hash of the project path, so a
  * grant approved in project A never applies in project B (#308).
  */
 

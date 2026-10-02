@@ -37,7 +37,7 @@ export async function runRepl(
   const { confirmFn, forcesConfirmation } = await createConfirmFn();
   agent.setConfirmFn(confirmFn);
   agent.setForcesConfirmationFn(forcesConfirmation);
-  printInfo(`OpenCLI — type /help for commands, Ctrl+C to exit\n`);
+  printInfo(`RubyCLI — type /help for commands, Ctrl+C to exit\n`);
 
   let session: Session;
   if (resumeSessionId) {
@@ -154,7 +154,7 @@ export async function runRepl(
     // /rewind — restore working tree to pre-write snapshot
     if (input === "/rewind") {
       if (snapshotManager && !snapshotManager.snapshotEnabled) {
-        printInfo("Snapshot disabled (OPENCLI_SNAPSHOT=off).");
+        printInfo("Snapshot disabled (RUBYCLI_SNAPSHOT=off).");
       } else if (snapshotManager && !snapshotManager.gitAvailable) {
         printInfo("Rewind unavailable: not in a git repo, or git not installed.");
       } else if (!snapshotManager || !snapshotManager.hasSnapshot) {
@@ -188,7 +188,7 @@ export async function runRepl(
       if (!subArg || subArg === "list") {
         const config = await loadMcpConfig(AGENT_DIR);
         if (!config || Object.keys(config.mcpServers).length === 0) {
-          printInfo("No MCP servers configured. Run `opencli mcp add` to add one.\n");
+          printInfo("No MCP servers configured. Run `ruby mcp add` to add one.\n");
         } else {
           for (const [name, cfg] of Object.entries(config.mcpServers)) {
             process.stderr.write(chalk.bold(name) + chalk.dim(` [${cfg.transport}]`) + "\n");

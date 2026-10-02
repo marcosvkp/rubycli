@@ -67,5 +67,12 @@ export type StreamEvent =
       args: Record<string, unknown>;
       thoughtSignature?: string;
     }
-  | { type: "usage"; inputTokens: number; outputTokens: number }
+  | {
+      type: "usage";
+      inputTokens: number;
+      outputTokens: number;
+      cachedTokens?: number;
+      reasoningTokens?: number;
+      totalTokens?: number;
+    }
   | { type: "done" };

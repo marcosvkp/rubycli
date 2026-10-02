@@ -51,7 +51,7 @@ async function promptPlanApproval(): Promise<"approve" | "edit" | "cancel"> {
 }
 
 async function editPlanInEditor(plan: string): Promise<string | null> {
-  const tmpPath = join(tmpdir(), `opencli-plan-${Date.now()}.md`);
+  const tmpPath = join(tmpdir(), `rubycli-plan-${Date.now()}.md`);
   await writeFile(tmpPath, plan);
   const editor = process.env.EDITOR ?? process.env.VISUAL ?? "vi";
   try {

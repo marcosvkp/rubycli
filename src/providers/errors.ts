@@ -1,4 +1,4 @@
-export type ProviderName = "Gemini" | "Anthropic" | "OpenAI";
+export type ProviderName = "Gemini" | "Anthropic" | "OpenAI" | "RubyCLI";
 
 function extractStatus(err: unknown): number | undefined {
   if (err && typeof err === "object" && "status" in err) {
@@ -29,7 +29,7 @@ function extractHumanMessage(raw: string): string {
   }
 }
 
-export function toFriendlyError(err: unknown, provider: ProviderName): Error {
+export function toFriendlyError(err: unknown, provider: ProviderName, keyHint?: string): Error {
   const status = extractStatus(err);
   const original = err instanceof Error ? err : new Error(String(err));
 
@@ -42,13 +42,9 @@ export function toFriendlyError(err: unknown, provider: ProviderName): Error {
   } else if (status === 404) {
     message = `${provider}: model not found (404). ${innerMsg} Try a different model with --model.`;
   } else if (status === 401) {
-    const flag =
-      provider === "Gemini"
-        ? "--gemini-api-key"
-        : provider === "Anthropic"
-          ? "--anthropic-api-key"
-          : "--openai-api-key";
-    message = `Invalid ${provider} API key. Run: opencli config ${flag} <key>`;
+    // keyHint lets the CLI inject its own remediation (e.g. "ruby config --api-key <key>");
+    // the legacy --<provider>-api-key flags no longer exist.
+    message = keyHint ?? `Invalid ${provider} API key. Check your API key and try again.`;
   } else if (status === 403) {
     message = `${provider} access denied (403). Check your API key permissions.`;
   } else if (status === 429) {

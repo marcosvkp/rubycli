@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import type { LLMClient } from "../providers/client.js";
 import type { StreamEvent, Message } from "../providers/types.js";
 
-// Redirect homedir so Session writes to a throw-away temp dir, not ~/.opencli
+// Redirect homedir so Session writes to a throw-away temp dir, not ~/.rubycli
 const tmpHome = join(tmpdir(), `opencli-session-e2e-${Date.now()}`);
 
 vi.mock("node:os", async (importOriginal) => {

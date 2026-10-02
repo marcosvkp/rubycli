@@ -3,7 +3,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import os from "node:os";
 
-// Isolate history writes from the real ~/.opencli
+// Isolate history writes from the real ~/.rubycli
 const tmpHome = join(os.tmpdir(), `opencli-input-test-${Date.now()}`);
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();

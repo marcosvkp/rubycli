@@ -62,6 +62,18 @@ export interface ProviderPreset {
  * may truncate a window or a local Modelfile may raise it.
  */
 export const PRESETS: Record<string, ProviderPreset> = {
+  rubycli: {
+    id: "rubycli",
+    label: "RubyCLI",
+    keyLabel: "RubyCLI",
+    wire: "openai",
+    // Resolved at runtime: RUBYCLI_BASE_URL > config baseUrl > this default.
+    baseUrl: "https://app.rubycli.cloud/v1",
+    apiKeyEnv: ["RUBYCLI_API_KEY"],
+    detectPrefixes: ["ruby-"],
+    models: [{ id: "ruby-auto", contextWindow: 200_000 }],
+  },
+
   gemini: {
     id: "gemini",
     label: "Google Gemini",
@@ -206,7 +218,7 @@ export const PRESETS: Record<string, ProviderPreset> = {
 };
 
 /** Provider fallback when a model name matches no registered prefix. */
-export const DEFAULT_PROVIDER = "gemini";
+export const DEFAULT_PROVIDER = "rubycli";
 
 export const DEFAULT_CONTEXT_WINDOW = 100_000;
 

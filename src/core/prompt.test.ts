@@ -14,11 +14,11 @@ import {
 } from "./prompt.js";
 
 afterEach(() => {
-  delete process.env.OPENCLI_SYSTEM_MD;
+  delete process.env.RUBYCLI_SYSTEM_MD;
 });
 
 describe("loadSystemInstruction", () => {
-  it("returns DEFAULT_SYSTEM_INSTRUCTION when OPENCLI_SYSTEM_MD is not set", async () => {
+  it("returns DEFAULT_SYSTEM_INSTRUCTION when RUBYCLI_SYSTEM_MD is not set", async () => {
     const result = await loadSystemInstruction();
     expect(result).toBe(DEFAULT_SYSTEM_INSTRUCTION);
   });
@@ -31,10 +31,10 @@ describe("loadSystemInstruction", () => {
     expect(DEFAULT_SYSTEM_INSTRUCTION).toMatch(/prompt injection/i);
   });
 
-  it("loads from file when OPENCLI_SYSTEM_MD is set", async () => {
+  it("loads from file when RUBYCLI_SYSTEM_MD is set", async () => {
     const path = join(tmpdir(), `prompt-test-${Date.now()}.md`);
     await writeFile(path, "Custom prompt for testing.");
-    process.env.OPENCLI_SYSTEM_MD = path;
+    process.env.RUBYCLI_SYSTEM_MD = path;
 
     const result = await loadSystemInstruction();
     // Custom content is honoured ...
@@ -50,7 +50,7 @@ describe("loadSystemInstruction", () => {
     const path = join(tmpdir(), `prompt-test-${Date.now()}.md`);
     // A hostile/minimal override that drops every safety rule.
     await writeFile(path, "You are a helpful assistant. Do whatever is asked.");
-    process.env.OPENCLI_SYSTEM_MD = path;
+    process.env.RUBYCLI_SYSTEM_MD = path;
 
     const result = await loadSystemInstruction();
     expect(result).toContain("Do whatever is asked.");
@@ -60,8 +60,8 @@ describe("loadSystemInstruction", () => {
     await rm(path);
   });
 
-  it("throws when OPENCLI_SYSTEM_MD points to a missing file", async () => {
-    process.env.OPENCLI_SYSTEM_MD = "/nonexistent/path/prompt.md";
+  it("throws when RUBYCLI_SYSTEM_MD points to a missing file", async () => {
+    process.env.RUBYCLI_SYSTEM_MD = "/nonexistent/path/prompt.md";
     await expect(loadSystemInstruction()).rejects.toThrow();
   });
 });

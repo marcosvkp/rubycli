@@ -11,19 +11,25 @@ describe("toFriendlyError", () => {
   it("maps 401 to invalid key message for Gemini", () => {
     const err = toFriendlyError(makeStatusError(401), "Gemini");
     expect(err.message).toContain("Invalid Gemini API key");
-    expect(err.message).toContain("--gemini-api-key");
   });
 
   it("maps 401 to invalid key message for Anthropic", () => {
     const err = toFriendlyError(makeStatusError(401), "Anthropic");
     expect(err.message).toContain("Invalid Anthropic API key");
-    expect(err.message).toContain("--anthropic-api-key");
   });
 
   it("maps 401 to invalid key message for OpenAI", () => {
     const err = toFriendlyError(makeStatusError(401), "OpenAI");
     expect(err.message).toContain("Invalid OpenAI API key");
-    expect(err.message).toContain("--openai-api-key");
+  });
+
+  it("uses the injected keyHint for 401 when provided", () => {
+    const err = toFriendlyError(
+      makeStatusError(401),
+      "RubyCLI",
+      "Run: ruby config --api-key <key>",
+    );
+    expect(err.message).toBe("Run: ruby config --api-key <key>");
   });
 
   it("maps 429 to rate limit message", () => {

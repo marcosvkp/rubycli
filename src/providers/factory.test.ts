@@ -23,10 +23,14 @@ describe("detectProvider", () => {
     expect(detectProvider("o4-mini")).toBe("openai");
   });
 
-  it("defaults to gemini for all other model names", () => {
+  it("detects gemini for gemini- model names", () => {
     expect(detectProvider("gemini-3.1-flash-lite-preview")).toBe("gemini");
     expect(detectProvider("gemini-2.5-pro")).toBe("gemini");
-    expect(detectProvider("unknown-model")).toBe("gemini");
+  });
+
+  it("defaults to rubycli for unknown model names", () => {
+    expect(detectProvider("unknown-model")).toBe("rubycli");
+    expect(detectProvider("ruby-auto")).toBe("rubycli");
   });
 });
 

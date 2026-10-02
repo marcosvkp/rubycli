@@ -87,7 +87,7 @@ export async function spawnAndCollect(
           if (!resolved) {
             stderr.push(
               Buffer.from(
-                "\n[opencli] command timed out; backgrounded child still holding stdio — forcing detach.\n",
+                "\n[rubycli] command timed out; backgrounded child still holding stdio — forcing detach.\n",
               ),
             );
             finish(-1);

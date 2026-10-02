@@ -32,7 +32,7 @@ async function createSkill(
 describe("SkillRegistry", () => {
   it("discovers skills from a project directory", async () => {
     const projectDir = join(tmpDir, "project");
-    const skillsDir = join(projectDir, ".opencli", "skills");
+    const skillsDir = join(projectDir, ".rubycli", "skills");
     await mkdir(skillsDir, { recursive: true });
     await createSkill(skillsDir, "review", "Review code for issues.");
 
@@ -45,7 +45,7 @@ describe("SkillRegistry", () => {
 
   it("lists all discovered skills", async () => {
     const projectDir = join(tmpDir, "project");
-    const skillsDir = join(projectDir, ".opencli", "skills");
+    const skillsDir = join(projectDir, ".rubycli", "skills");
     await mkdir(skillsDir, { recursive: true });
     await createSkill(skillsDir, "review", "Review code.");
     await createSkill(skillsDir, "explain", "Explain code.");
@@ -59,9 +59,9 @@ describe("SkillRegistry", () => {
   });
 
   it("project skills take precedence over user-global skills", async () => {
-    // We can only test the cross-client .agents/skills/ path here to avoid touching real ~/.opencli
+    // We can only test the cross-client .agents/skills/ path here to avoid touching real ~/.rubycli
     const projectDir = join(tmpDir, "project");
-    const projectSkillsDir = join(projectDir, ".opencli", "skills");
+    const projectSkillsDir = join(projectDir, ".rubycli", "skills");
     const agentsSkillsDir = join(projectDir, ".agents", "skills");
     await mkdir(projectSkillsDir, { recursive: true });
     await mkdir(agentsSkillsDir, { recursive: true });
@@ -83,7 +83,7 @@ describe("SkillRegistry", () => {
 
   it("loads and processes skill body with $ARGUMENTS", async () => {
     const projectDir = join(tmpDir, "project");
-    const skillsDir = join(projectDir, ".opencli", "skills");
+    const skillsDir = join(projectDir, ".rubycli", "skills");
     await mkdir(skillsDir, { recursive: true });
     await createSkill(skillsDir, "review", "Review code.", "Review $ARGUMENTS for issues.");
 
@@ -102,7 +102,7 @@ describe("SkillRegistry", () => {
 
   it("generates a catalog summary", async () => {
     const projectDir = join(tmpDir, "project");
-    const skillsDir = join(projectDir, ".opencli", "skills");
+    const skillsDir = join(projectDir, ".rubycli", "skills");
     await mkdir(skillsDir, { recursive: true });
     await createSkill(skillsDir, "review", "Review code for issues.");
 

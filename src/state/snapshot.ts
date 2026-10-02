@@ -26,7 +26,7 @@ export class SnapshotManager {
   }
 
   get snapshotEnabled(): boolean {
-    return process.env.OPENCLI_SNAPSHOT !== "off";
+    return (process.env.RUBYCLI_SNAPSHOT ?? process.env.OPENCLI_SNAPSHOT) !== "off";
   }
 
   get lastSnapshotSha(): string | undefined {

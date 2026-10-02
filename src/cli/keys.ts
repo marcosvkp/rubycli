@@ -4,10 +4,11 @@ import type { Config } from "../state/config.js";
 
 /**
  * Config fields holding first-party keys. These predate the registry and are kept as
- * dedicated fields so existing ~/.opencli/config.json files keep working; newer
+ * dedicated fields so existing ~/.rubycli/config.json files keep working; newer
  * providers use the generic `providerApiKeys` map instead.
  */
 const CONFIG_KEY_FIELDS: Record<string, keyof Config> = {
+  rubycli: "rubyApiKey",
   gemini: "geminiApiKey",
   anthropic: "anthropicApiKey",
   openai: "openaiApiKey",
@@ -49,6 +50,6 @@ export function resolveApiKey(provider: Provider, config: Config): string {
   const envList = preset.apiKeyEnv.join(" or ");
   throw new Error(
     `No ${preset.keyLabel ?? preset.label} API key found. Set ${envList}, ` +
-      `or add it to ~/.opencli/config.json under providerApiKeys.${provider}`,
+      `or add it to ~/.rubycli/config.json under providerApiKeys.${provider}`,
   );
 }

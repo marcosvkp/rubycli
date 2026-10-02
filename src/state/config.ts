@@ -1,7 +1,8 @@
 import { readFile, writeFile, mkdir, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
-export const AGENT_DIR = join(homedir(), ".opencli");
+import { AGENT_DIR_NAME } from "../rubycli.js";
+export const AGENT_DIR = join(homedir(), AGENT_DIR_NAME);
 const CONFIG_FILE = join(AGENT_DIR, "config.json");
 
 export interface Permissions {
@@ -11,6 +12,8 @@ export interface Permissions {
 }
 
 export interface Config {
+  /** RubyCLI API key — the primary auth for this CLI. */
+  rubyApiKey?: string;
   geminiApiKey?: string;
   anthropicApiKey?: string;
   openaiApiKey?: string;
@@ -39,7 +42,7 @@ export interface Config {
 }
 
 const DEFAULTS: Config = {
-  model: "gemini-3.1-flash-lite-preview",
+  model: "ruby-auto",
   temperature: 0.7,
   maxTokens: 8192,
   autoExecute: false,

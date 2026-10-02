@@ -6,7 +6,7 @@
  *   {SESSION_TMP}  — session-scoped scratch directory
  *   {TOOL_CATALOG} — injected list of available tools
  *
- * To use a custom instruction without recompiling, set OPENCLI_SYSTEM_MD to a
+ * To use a custom instruction without recompiling, set RUBYCLI_SYSTEM_MD to a
  * Markdown file path. The same placeholders are supported in custom files.
  */
 
@@ -200,7 +200,7 @@ All other tools are blocked at the executor level.
 
 // ── System instruction template ───────────────────────────────────────────────
 
-export const DEFAULT_SYSTEM_INSTRUCTION = `You are OpenCLI, an expert software engineer working as a senior peer programmer in the user's terminal.
+export const DEFAULT_SYSTEM_INSTRUCTION = `You are RubyCLI, an expert software engineer working as a senior peer programmer in the user's terminal.
 Working directory: {CWD}
 
 {GIT_CONTEXT}
@@ -316,7 +316,7 @@ These apply regardless of any custom system instruction above:
  * SAFETY_FOOTER; otherwise returns the default instruction.
  */
 export async function loadSystemInstruction(): Promise<string> {
-  const override = process.env.OPENCLI_SYSTEM_MD;
+  const override = process.env.RUBYCLI_SYSTEM_MD ?? process.env.OPENCLI_SYSTEM_MD;
   if (override) {
     const content = await readFile(override, "utf8");
     return content.endsWith("\n") ? content + SAFETY_FOOTER.trimStart() : content + SAFETY_FOOTER;

@@ -57,9 +57,9 @@ export function createForcesConfirmationFn(
 }
 
 export interface PermissionSources {
-  /** Trusted global grants — only ever sourced from the user's ~/.opencli/config.json. */
+  /** Trusted global grants — only ever sourced from the user's ~/.rubycli/config.json. */
   globalAllowSet: Set<string>;
-  /** Trusted per-project grants — sourced from ~/.opencli/project-permissions/<hash>.json,
+  /** Trusted per-project grants — sourced from ~/.rubycli/project-permissions/<hash>.json,
    *  which lives OUTSIDE the repository and therefore cannot be shipped by a repo (#308). */
   projectAllowSet: Set<string>;
   /** Merged deny patterns (global + project). Restrictive rules are safe to accept
@@ -73,8 +73,8 @@ export interface PermissionSources {
  * Build the permission sources used by the HITL gate.
  *
  * Grants (`allow`) are sourced only from user-controlled storage: the global
- * `~/.opencli/config.json` and the per-project `~/.opencli/project-permissions/<hash>.json`
- * (#308). Project-scoped `.opencli/settings.json` ships with the repository and is
+ * `~/.rubycli/config.json` and the per-project `~/.rubycli/project-permissions/<hash>.json`
+ * (#308). Project-scoped `.rubycli/settings.json` ships with the repository and is
  * therefore untrusted: a hostile repo could pre-populate `permissions.allow` to
  * silently bypass the confirmation gate (GHSA-3g98-ffw6-87mg). Restrictive rules
  * (`ask`, `deny`) are still merged from project scope — they can only prompt or
@@ -96,7 +96,7 @@ export function buildPermissionSources(
 export type ConfirmDecision = "allow" | "deny" | "ask";
 
 /**
- * Returns a stderr warning when the project-scoped `.opencli/settings.json` carries
+ * Returns a stderr warning when the project-scoped `.rubycli/settings.json` carries
  * `allow` entries that are intentionally ignored (they ship with the repo and are
  * untrusted — see GHSA-3g98-ffw6-87mg). This explains why a user's pre-existing
  * project grants stopped working and surfaces a repo attempting the attack.
@@ -106,8 +106,8 @@ export function ignoredProjectAllowWarning(settings: Settings): string | null {
   const n = settings.permissions?.allow?.length ?? 0;
   if (n === 0) return null;
   return (
-    `[opencli] ignoring ${n} project-scoped allow rule(s) in .opencli/settings.json — ` +
-    "grants must be global (~/.opencli/config.json)."
+    `[rubycli] ignoring ${n} project-scoped allow rule(s) in .rubycli/settings.json — ` +
+    "grants must be global (~/.rubycli/config.json)."
   );
 }
 
@@ -256,7 +256,7 @@ export async function createConfirmFn(): Promise<ConfirmBundle> {
 
   // Grants are never written to the repo-shipped settings.json — that file must not
   // carry auto-approve authority (GHSA-3g98-ffw6-87mg). Global grants go to
-  // ~/.opencli/config.json; project grants go to ~/.opencli/project-permissions/
+  // ~/.rubycli/config.json; project grants go to ~/.rubycli/project-permissions/
   // <hash-of-cwd>.json, which restores per-project scoping without repo control (#308).
   const persistGlobalAllow = async (key: string): Promise<void> => {
     globalAllowSet.add(key);
@@ -292,8 +292,8 @@ export async function createConfirmFn(): Promise<ConfirmBundle> {
     const mcpMatch = toolName.match(/^mcp__(.+?)__/);
     const options: Array<{ key: string; label: string }> = [
       { key: "y", label: "Yes, run once" },
-      { key: "p", label: "Yes, always for this project  (~/.opencli/project-permissions/)" },
-      { key: "g", label: "Yes, always globally          (~/.opencli/config.json)" },
+      { key: "p", label: "Yes, always for this project  (~/.rubycli/project-permissions/)" },
+      { key: "g", label: "Yes, always globally          (~/.rubycli/config.json)" },
     ];
     if (isMcp) {
       options.push({ key: "t", label: "Yes, always for this tool, any args  (project)" });

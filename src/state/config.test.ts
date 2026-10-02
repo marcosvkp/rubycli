@@ -3,8 +3,8 @@ import { rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-// We patch homedir to isolate config from the real ~/.opencli
-const tmpHome = join(tmpdir(), `opencli-config-test-${Date.now()}`);
+// We patch homedir to isolate config from the real ~/.rubycli
+const tmpHome = join(tmpdir(), `rubycli-config-test-${Date.now()}`);
 
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
@@ -21,7 +21,7 @@ afterEach(async () => {
 describe("loadConfig", () => {
   it("returns defaults when no config file exists", async () => {
     const config = await loadConfig();
-    expect(config.model).toBe("gemini-3.1-flash-lite-preview");
+    expect(config.model).toBe("ruby-auto");
     expect(config.temperature).toBe(0.7);
     expect(config.historySize).toBe(50);
     expect(config.autoExecute).toBe(false);
@@ -40,7 +40,7 @@ describe("loadConfig", () => {
     // in a literal is the prototype setter and never serialises) so the file genuinely
     // contains __proto__/constructor as JSON keys.
     const { writeFile, mkdir } = await import("node:fs/promises");
-    const cfgDir = join(tmpHome, ".opencli");
+    const cfgDir = join(tmpHome, ".rubycli");
     await mkdir(cfgDir, { recursive: true });
     await writeFile(
       join(cfgDir, "config.json"),
@@ -77,10 +77,15 @@ describe("saveConfig", () => {
     expect(config.historySize).toBe(25);
   });
 
-  it("writes config file with owner-only permissions (0o600)", async () => {
-    await saveConfig({ model: "gemini-2.5-flash" });
-    const configFile = join(tmpHome, ".opencli", "config.json");
-    const info = await stat(configFile);
-    expect(info.mode & 0o777).toBe(0o600);
-  });
+  // Windows has no POSIX chmod: stat().mode always reports 0o666 regardless of
+  // the 0o600 write intent. The permission guarantee holds on Linux/macOS.
+  it.skipIf(process.platform === "win32")(
+    "writes config file with owner-only permissions (0o600)",
+    async () => {
+      await saveConfig({ model: "gemini-2.5-flash" });
+      const configFile = join(tmpHome, ".rubycli", "config.json");
+      const info = await stat(configFile);
+      expect(info.mode & 0o777).toBe(0o600);
+    },
+  );
 });

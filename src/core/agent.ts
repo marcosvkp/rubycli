@@ -99,6 +99,38 @@ export class Agent {
     this.contextWindow = contextWindowFor(this.model, options?.contextWindow, options?.provider);
   }
 
+  private metricsSink?: {
+    onCallEnd: (e: {
+      inputTokens: number;
+      outputTokens: number;
+      latencyMs: number;
+      firstTokenLatencyMs?: number;
+      cachedTokens?: number;
+      reasoningTokens?: number;
+    }) => void;
+  };
+
+  setMetricsSink(
+    sink:
+      | {
+          onCallEnd: (e: {
+            inputTokens: number;
+            outputTokens: number;
+            latencyMs: number;
+            firstTokenLatencyMs?: number;
+            cachedTokens?: number;
+            reasoningTokens?: number;
+          }) => void;
+        }
+      | undefined,
+  ): void {
+    this.metricsSink = sink;
+  }
+
+  getModel(): string {
+    return this.model;
+  }
+
   setConfirmFn(fn: ConfirmFn): void {
     this.confirmFn = fn;
   }
@@ -178,9 +210,13 @@ export class Agent {
       const callStart = Date.now();
       let usageInputTokens = 0;
       let usageOutputTokens = 0;
+      let usageCachedTokens: number | undefined;
+      let usageReasoningTokens: number | undefined;
+      let firstTokenAt: number | undefined;
 
       for await (const event of this.client.stream(messages, systemInstruction, toolDefinitions)) {
         if (event.type === "text") {
+          if (firstTokenAt === undefined) firstTokenAt = Date.now();
           responseText += event.text;
           yield { type: "text", text: event.text };
         } else if (event.type === "function_call") {
@@ -200,16 +236,23 @@ export class Agent {
         } else if (event.type === "usage") {
           usageInputTokens = event.inputTokens;
           usageOutputTokens = event.outputTokens;
+          if (event.cachedTokens !== undefined) usageCachedTokens = event.cachedTokens;
+          if (event.reasoningTokens !== undefined) usageReasoningTokens = event.reasoningTokens;
         }
       }
 
-      this.obs?.({
-        type: "llm_call_end",
+      const callEnd = {
+        type: "llm_call_end" as const,
         model: this.model,
         inputTokens: usageInputTokens,
         outputTokens: usageOutputTokens,
         latencyMs: Date.now() - callStart,
-      });
+        ...(firstTokenAt !== undefined ? { firstTokenLatencyMs: firstTokenAt - callStart } : {}),
+        ...(usageCachedTokens !== undefined ? { cachedTokens: usageCachedTokens } : {}),
+        ...(usageReasoningTokens !== undefined ? { reasoningTokens: usageReasoningTokens } : {}),
+      };
+      this.obs?.(callEnd);
+      this.metricsSink?.onCallEnd(callEnd);
 
       const assistantParts: Message["parts"] = [];
       if (responseText) assistantParts.push({ type: "text", text: responseText });

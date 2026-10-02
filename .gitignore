@@ -6,3 +6,4 @@ coverage/
 .claude/
 .gemini-agent/tmp/
 .opencli/tmp/
+.rubycli/

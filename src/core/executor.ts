@@ -13,7 +13,8 @@ import { escapesCwdSync, isCredentialPath } from "../tools/file/paths.js";
 // exact line spans for follow-up edit calls.
 const DEFAULT_MAX_OUTPUT = 20_000;
 const MAX_TOOL_OUTPUT =
-  parseInt(process.env.OPENCLI_MAX_TOOL_OUTPUT ?? "", 10) || DEFAULT_MAX_OUTPUT;
+  parseInt(process.env.RUBYCLI_MAX_TOOL_OUTPUT ?? process.env.OPENCLI_MAX_TOOL_OUTPUT ?? "", 10) ||
+  DEFAULT_MAX_OUTPUT;
 
 /** Called when a tool signals it requires confirmation. Returns "allow" or "deny". */
 export type ConfirmFn = (

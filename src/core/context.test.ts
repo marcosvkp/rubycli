@@ -42,14 +42,16 @@ describe("ContextManager", () => {
   it("uses DEFAULT_SYSTEM_INSTRUCTION when no template is passed", () => {
     const ctx = new ContextManager();
     const instruction = ctx.getSystemInstruction();
-    expect(instruction).toContain("OpenCLI");
+    expect(instruction).toContain("RubyCLI");
     expect(instruction).toContain(process.cwd());
   });
 
   it("uses the provided custom instruction template", () => {
     const ctx = new ContextManager("Custom prompt. CWD={CWD}\n{TOOL_CATALOG}");
     expect(ctx.getSystemInstruction()).toContain("Custom prompt.");
-    expect(ctx.getSystemInstruction()).not.toContain("OpenCLI");
+    // The default template's opening line must not leak into a custom one.
+    // (Can't assert on the bare product name: this repo's cwd contains it.)
+    expect(ctx.getSystemInstruction()).not.toContain("You are RubyCLI");
   });
 
   it("substitutes {CWD} in the instruction", () => {
@@ -565,7 +567,7 @@ describe("DEFAULT_SYSTEM_INSTRUCTION", () => {
   });
 
   it("defines the agent persona", () => {
-    expect(DEFAULT_SYSTEM_INSTRUCTION).toContain("OpenCLI");
+    expect(DEFAULT_SYSTEM_INSTRUCTION).toContain("RubyCLI");
   });
 
   it("includes all major sections", () => {

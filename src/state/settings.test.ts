@@ -33,7 +33,7 @@ describe("saveSettings", () => {
   it("merges allow list without overwriting other permissions fields", async () => {
     await saveSettings({ permissions: { allow: ["a"] } }, tmpDir);
     // Simulate a future deny list already in the file
-    const dir = join(tmpDir, ".opencli");
+    const dir = join(tmpDir, ".rubycli");
     const file = join(dir, "settings.json");
     const { writeFile, mkdir } = await import("node:fs/promises");
     await mkdir(dir, { recursive: true });
@@ -46,7 +46,7 @@ describe("saveSettings", () => {
   });
 
   it("merges new settings without overwriting unrelated top-level fields", async () => {
-    const dir = join(tmpDir, ".opencli");
+    const dir = join(tmpDir, ".rubycli");
     const file = join(dir, "settings.json");
     const { writeFile, mkdir } = await import("node:fs/promises");
     await mkdir(dir, { recursive: true });

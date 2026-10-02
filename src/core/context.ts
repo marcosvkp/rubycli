@@ -42,7 +42,7 @@ export class ContextManager {
 
     const rendered = renderSystemInstruction(this.systemInstructionTemplate, {
       cwd: process.cwd(),
-      tmpDir: this.sessionTmpDir ?? `${process.cwd()}/.opencli/tmp`,
+      tmpDir: this.sessionTmpDir ?? `${process.cwd()}/.rubycli/tmp`,
       tools,
       gitContext: getGitContext(),
       skillCatalog: this.skillCatalog,

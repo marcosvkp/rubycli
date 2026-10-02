@@ -1,4 +1,5 @@
 import { Command, InvalidArgumentError } from "commander";
+import { createInterface } from "node:readline";
 import { createClient, createCompactionClient, detectProvider } from "../providers/factory.js";
 import {
   isKnownProvider,
@@ -26,6 +27,17 @@ import { registerMcpCommand } from "./mcp-cmd.js";
 import { SnapshotManager } from "../state/snapshot.js";
 import pkg from "../../package.json";
 import { looksLikeActionablePlan } from "./plan.js";
+import {
+  PRODUCT_NAME,
+  CLI_COMMAND,
+  DEFAULT_MODEL,
+  DEFAULT_BASE_URL,
+  API_KEY_ENV,
+  DEBUG_ENV,
+  MODEL_ENV,
+  BASE_URL_ENV,
+  redactRubyKey,
+} from "../rubycli.js";
 
 function parseTurns(raw: string): number {
   const n = parseInt(raw, 10);
@@ -44,19 +56,14 @@ function parseTemperature(raw: string): number {
 const program = new Command();
 
 program
-  .name("opencli")
-  .description(
-    "An open-source AI agent CLI — supports Gemini, Claude, OpenAI, and OSS/local models",
-  )
+  .name(CLI_COMMAND)
+  .description(`${PRODUCT_NAME} — AI coding agent powered by RubyCLI Cloud`)
   .version(pkg.version);
 
 program
   .command("chat", { isDefault: true })
   .description("Start an interactive chat session")
-  .option(
-    "-m, --model <model>",
-    "Model to use (e.g. gemini-3.1-flash-lite-preview, claude-sonnet-4-6)",
-  )
+  .option("-m, --model <model>", `Model to use (default: ${DEFAULT_MODEL})`)
   .option("-r, --resume", "Resume the most recent session")
   .option("-s, --session <id>", "Resume a specific session by ID")
   .option("--max-turns <n>", "Maximum agent iterations per prompt (default: 50)", parseTurns)
@@ -64,9 +71,9 @@ program
   .option("--sandbox <mode>", "Sandbox mode for bash tool: auto | strict | off (default: auto)")
   .option(
     "--provider <provider>",
-    "Override provider detection (e.g. gemini, anthropic, openai, ollama, moonshot, zai)",
+    "Override provider detection (default: rubycli; advanced use only)",
   )
-  .option("--base-url <url>", "Custom base URL for proxy or local inference (e.g. LiteLLM)")
+  .option("--base-url <url>", "Custom RubyCLI API base URL (advanced use only)")
   .action(async (opts) => {
     const sessionId = opts.session ?? (opts.resume ? "latest" : undefined);
     await startChat(
@@ -105,11 +112,8 @@ program
   .option("--yes", "Auto-approve all tool confirmations (skip interactive prompts)")
   .option("--debug", "Emit structured observability events to stderr as JSON")
   .option("--sandbox <mode>", "Sandbox mode for bash tool: auto | strict | off (default: auto)")
-  .option(
-    "--provider <provider>",
-    "Override provider detection (e.g. gemini, anthropic, openai, ollama, moonshot, zai)",
-  )
-  .option("--base-url <url>", "Custom base URL for proxy or local inference (e.g. LiteLLM)")
+  .option("--provider <provider>", "Override provider detection (advanced use only)")
+  .option("--base-url <url>", "Custom RubyCLI API base URL (advanced use only)")
   .option("--temperature <float>", "LLM temperature (use 0 for determinism)", parseTemperature)
   .action(async (prompt: string, opts) => {
     await runSingle(
@@ -129,53 +133,29 @@ program
 program
   .command("config")
   .description("View or set configuration")
-  .option("--gemini-api-key <key>", "Set your Gemini API key")
-  .option("--anthropic-api-key <key>", "Set your Anthropic API key")
-  .option("--openai-api-key <key>", "Set your OpenAI API key")
+  .option("--api-key <key>", `Set your ${PRODUCT_NAME} API key`)
   .option("--model <model>", "Set the default model")
-  .option(
-    "--provider <provider>",
-    "Set the default provider (e.g. gemini, anthropic, openai, ollama, moonshot, zai)",
-  )
-  .option("--base-url <url>", "Set a custom base URL for proxy or local inference")
+  .option("--base-url <url>", "Set a custom RubyCLI API base URL")
   .action(async (opts) => {
-    if (opts.geminiApiKey) {
-      await saveConfig({ geminiApiKey: opts.geminiApiKey });
-      printInfo("Gemini API key saved.");
-    }
-    if (opts.anthropicApiKey) {
-      await saveConfig({ anthropicApiKey: opts.anthropicApiKey });
-      printInfo("Anthropic API key saved.");
-    }
-    if (opts.openaiApiKey) {
-      await saveConfig({ openaiApiKey: opts.openaiApiKey });
-      printInfo("OpenAI API key saved.");
+    if (opts.apiKey) {
+      await saveConfig({ rubyApiKey: opts.apiKey });
+      printInfo(`${PRODUCT_NAME} API key saved.`);
     }
     if (opts.model) {
       await saveConfig({ model: opts.model });
       printInfo(`Default model set to ${opts.model}.`);
     }
-    if (opts.provider) {
-      await saveConfig({ provider: opts.provider as Config["provider"] });
-      printInfo(`Default provider set to ${opts.provider}.`);
-    }
     if (opts.baseUrl) {
       await saveConfig({ baseUrl: opts.baseUrl });
       printInfo(`Base URL set to ${opts.baseUrl}.`);
     }
-    if (
-      !opts.geminiApiKey &&
-      !opts.anthropicApiKey &&
-      !opts.openaiApiKey &&
-      !opts.model &&
-      !opts.provider &&
-      !opts.baseUrl
-    ) {
+    if (!opts.apiKey && !opts.model && !opts.baseUrl) {
       const config = await loadConfig();
       console.log(
         JSON.stringify(
           {
             ...config,
+            rubyApiKey: config.rubyApiKey ? "***" : undefined,
             geminiApiKey: config.geminiApiKey ? "***" : undefined,
             anthropicApiKey: config.anthropicApiKey ? "***" : undefined,
             openaiApiKey: config.openaiApiKey ? "***" : undefined,
@@ -187,10 +167,24 @@ program
     }
   });
 
+program
+  .command("model")
+  .description("View or set the default model")
+  .argument("[model]", "Model to set as default (omit to show current)")
+  .action(async (model?: string) => {
+    if (model) {
+      await saveConfig({ model });
+      printInfo(`Default model set to ${model}.`);
+    } else {
+      const config = await loadConfig();
+      console.log(config.model);
+    }
+  });
+
 registerMcpCommand(program);
 
 program.parseAsync(process.argv).catch((err) => {
-  printError(err instanceof Error ? err.message : String(err));
+  printError(redactRubyKey(err instanceof Error ? err.message : String(err)));
   process.exit(1);
 });
 
@@ -203,7 +197,7 @@ async function startChat(
   providerOverride?: string,
   baseUrlOverride?: string,
 ): Promise<void> {
-  const { agent, skills, mcpManager, snapshotManager } = await createAgent(
+  const { agent, skills, mcpManager, snapshotManager, model } = await createAgent(
     modelOverride,
     maxTurns,
     debug,
@@ -226,6 +220,7 @@ async function startChat(
   process.once("SIGTERM", () => void onExit());
   process.once("SIGINT", () => void onExit());
 
+  process.stdout.write(`\n${PRODUCT_NAME}\n\n${model}\n\n`);
   await runRepl(agent, skills, resumeSessionId, onExit, snapshotManager);
   await cleanup(); // normal exit (Ctrl+D or /exit)
 }
@@ -271,7 +266,7 @@ async function runSingle(
         process.stdout.write(event.text);
         text += event.text;
       }
-      if (event.type === "error") process.stderr.write(`Error: ${event.message}\n`);
+      if (event.type === "error") process.stderr.write(`Error: ${redactRubyKey(event.message)}\n`);
       if (event.type === "done") process.stdout.write("\n");
     }
     return text;
@@ -306,11 +301,16 @@ async function runSingle(
 }
 
 function makeDebugHandler(): (event: ObservabilityEvent) => void {
-  return (event) => process.stderr.write(JSON.stringify(event) + "\n");
+  return (event) => process.stderr.write(redactRubyKey(JSON.stringify(event)) + "\n");
 }
 
 function resolveSandboxMode(flagValue: string | undefined, config: Config): SandboxMode {
-  const raw = flagValue ?? process.env.OPENCLI_SANDBOX ?? config.sandbox ?? "auto";
+  const raw =
+    flagValue ??
+    process.env.RUBYCLI_SANDBOX ??
+    process.env.OPENCLI_SANDBOX ??
+    config.sandbox ??
+    "auto";
   if (raw === "auto" || raw === "strict" || raw === "off") return raw;
   throw new Error(`Invalid --sandbox value '${raw}'. Valid values: auto, strict, off`);
 }
@@ -323,10 +323,81 @@ function resolveProvider(flag: string | undefined, config: Config, model: string
       `Invalid --provider value '${raw}'. Valid values: ${listProviderIds().join(", ")}`,
     );
   }
+  // RubyCLI is the default product experience — only models outside the ruby-*
+  // namespace fall through to registry detection (advanced use).
+  if (model.startsWith("ruby-")) return "rubycli";
   const detected = detectProvider(model);
   const warning = providerDetectionWarning(model, detected);
-  if (warning) process.stderr.write(`[opencli] warn: ${warning}\n`);
+  if (warning) process.stderr.write(`[${CLI_COMMAND}] warn: ${redactRubyKey(warning)}\n`);
   return detected;
+}
+
+/**
+ * Resolve the RubyCLI API key with the documented priority:
+ *   1. RUBYCLI_API_KEY env var (never auto-persisted)
+ *   2. persisted local config (~/.rubycli/config.json)
+ *   3. interactive prompt (first run onboarding)
+ *
+ * For the rubycli provider this replaces the generic resolveApiKey throw with
+ * an onboarding flow; other providers keep the legacy behaviour.
+ */
+async function resolveRubyApiKey(config: Config, provider: string): Promise<string> {
+  if (provider !== "rubycli") return resolveApiKey(provider, config);
+
+  const fromEnv = process.env[API_KEY_ENV];
+  if (fromEnv) return fromEnv;
+  if (config.rubyApiKey) return config.rubyApiKey;
+
+  // Interactive onboarding — only when attached to a TTY.
+  if (!process.stdin.isTTY) {
+    throw new Error(
+      `No ${PRODUCT_NAME} API key configured. Set ${API_KEY_ENV}, ` +
+        `or run '${CLI_COMMAND}' interactively to configure one.`,
+    );
+  }
+
+  process.stdout.write(`\n${PRODUCT_NAME}\n\nNo API key configured.\n\n`);
+  const key = await promptForApiKey();
+  process.stdout.write("\nValidating API key...\n");
+
+  const baseUrl = process.env[BASE_URL_ENV] ?? config.baseUrl ?? DEFAULT_BASE_URL;
+  const valid = await validateApiKey(baseUrl, key);
+  if (!valid) {
+    throw new Error(`Invalid ${PRODUCT_NAME} API key. Please try again.`);
+  }
+
+  await saveConfig({ rubyApiKey: key });
+  process.stdout.write(`✓ API key configured\n\nStarting ${PRODUCT_NAME}...\n`);
+  return key;
+}
+
+function promptForApiKey(): Promise<string> {
+  return new Promise((resolve) => {
+    process.stdout.write(`Enter your ${PRODUCT_NAME} API key:\n> `);
+    const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+    rl.question("", (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+/**
+ * Lightweight key validation: GET <baseUrl>/models with the key.
+ * Any 2xx counts as valid; 401/403 means invalid; anything else (network
+ * errors, 5xx) is treated as "cannot validate" → invalid with a clear error.
+ */
+async function validateApiKey(baseUrl: string, key: string): Promise<boolean> {
+  try {
+    const url = baseUrl.replace(/\/+$/, "") + "/models";
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 async function createAgent(
@@ -339,26 +410,33 @@ async function createAgent(
   temperature?: number,
 ) {
   const config = await loadConfig();
-  const model = process.env.OPENCLI_MODEL ?? modelOverride ?? config.model;
+  const model = process.env[MODEL_ENV] ?? modelOverride ?? config.model ?? DEFAULT_MODEL;
 
   const sandboxMode = resolveSandboxMode(sandboxFlag, config);
   const runner = createSandboxRunner(sandboxMode, process.cwd());
   if (runner.warning) {
-    process.stderr.write(`[opencli] warn: ${runner.warning}\n`);
+    process.stderr.write(`[${CLI_COMMAND}] warn: ${runner.warning}\n`);
   }
 
   const provider = resolveProvider(providerOverride, config, model);
-  const baseUrl = baseUrlOverride ?? config.baseUrl;
-  const apiKey = resolveApiKey(provider, config);
+  const baseUrl =
+    process.env[BASE_URL_ENV] ?? baseUrlOverride ?? config.baseUrl ?? DEFAULT_BASE_URL;
+  const debugOn = debug ?? process.env[DEBUG_ENV] === "1";
+  const apiKey = await resolveRubyApiKey(config, provider);
   // Fixes #251: config.temperature was previously ignored unless --temperature was passed.
   const effectiveTemperature = temperature ?? config.temperature;
+  if (debugOn) {
+    process.stderr.write(
+      `[${CLI_COMMAND}] debug: provider=${provider} model=${model} endpoint=${baseUrl}\n`,
+    );
+  }
   const client = createClient(model, apiKey, {
-    includeUsage: !!debug,
+    includeUsage: true,
     maxTokens: config.maxTokens,
     provider,
     baseUrl,
     temperature: effectiveTemperature,
-    onWarn: debug ? (msg) => process.stderr.write(`[opencli] warn: ${msg}\n`) : undefined,
+    onWarn: debugOn ? (msg) => process.stderr.write(`[${CLI_COMMAND}] warn: ${msg}\n`) : undefined,
   });
   const tools = createDefaultRegistry(model, runner);
 
@@ -379,16 +457,16 @@ async function createAgent(
   const compactionClient = createCompactionClient(model, apiKey, { provider, baseUrl });
   const { contextWindow, warnings } = await resolveContextWindow(model, provider, baseUrl, config);
   for (const warning of warnings) {
-    process.stderr.write(`[opencli] warn: ${warning}\n`);
+    process.stderr.write(`[${CLI_COMMAND}] warn: ${redactRubyKey(warning)}\n`);
   }
   const agent = new Agent(client, tools, skills, systemInstruction, config.historySize, maxTurns, {
     model,
-    onObservability: debug ? makeDebugHandler() : undefined,
+    onObservability: debugOn ? makeDebugHandler() : undefined,
     snapshotManager,
     compactionClient,
     autoCompact: config.autoCompact,
     contextWindow,
     provider,
   });
-  return { agent, skills, mcpManager, snapshotManager };
+  return { agent, skills, mcpManager, snapshotManager, model };
 }

@@ -1,384 +1,97 @@
-<div align="center">
+# RubyCLI
 
-# 🤖 OpenCLI
+An AI coding agent for your terminal, powered by RubyCLI Cloud. You describe
+the task; the agent reads, edits, and runs code in your project until it's done.
 
-**An open-source AI coding agent for your terminal — runs on any model, sandboxes every command.**
+> RubyCLI is derived from [OpenCLI](https://github.com/zjshen14/opencli) (MIT
+> License) by Zhijie Shen. The upstream engine (agent loop, tools, MCP, skills,
+> sessions) is reused here under the MIT license; all OpenCLI copyright notices
+> are preserved.
 
-Claude Code's workflow, without the lock-in · Google Gemini · Anthropic Claude · any OpenAI-compatible provider
+## Install
 
-[![npm version](https://img.shields.io/npm/v/@zjshen/opencli)](https://www.npmjs.com/package/@zjshen/opencli)
-[![npm downloads](https://img.shields.io/npm/dm/@zjshen/opencli)](https://www.npmjs.com/package/@zjshen/opencli)
-[![GitHub stars](https://img.shields.io/github/stars/zjshen14/opencli)](https://github.com/zjshen14/opencli/stargazers)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/zjshen14/opencli/actions/workflows/ci.yml/badge.svg)](https://github.com/zjshen14/opencli/actions)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D20.6-green.svg)](https://nodejs.org)
-
-[Quick Start](#quick-start) · [Features](#features) · [Why OpenCLI?](#why-opencli) · [Skills](#skills) · [Contributing](CONTRIBUTING.md)
-
-</div>
-
----
-
-<p align="center">
-  <img src="docs/assets/demo.gif" alt="OpenCLI writing and running code from the terminal" width="700">
-</p>
-
-## Quick Start
+Requires Node.js 20+.
 
 ```bash
-# Install globally
-npm install -g @zjshen/opencli
-
-# Set your API key
-export GEMINI_API_KEY="your-key-here"
-# or
-export ANTHROPIC_API_KEY="your-key-here"
-
-# Start the interactive REPL
-opencli
+npm install -g @rubycli/cli
 ```
 
-Or try it instantly with `npx`:
+Or run from a clone of this repository:
 
 ```bash
-npx @zjshen/opencli
+npm install
+npm run build
+npm link
 ```
-
-## Features
-
-**The three things that make OpenCLI different:**
-
-- 🔀 **Runs on any model** — Gemini, Claude, or any OpenAI-compatible provider. Switch with a single flag — no rewrite, no vendor lock-in.
-- 🛡️ **Sandboxed by default** — Every shell command runs inside an OS-level sandbox (macOS `sandbox-exec`, Linux `bwrap`). The agent physically cannot write to `/etc`, `~/.ssh`, or your credentials.
-- 🧩 **Standard skills** — Drop-in compatible with the [Agent Skills open standard](https://agentskills.io). Your existing Claude Code and Gemini CLI skills just work.
-
-Plus everything you'd expect from a serious coding agent:
-
-- 📋 **Plan mode** — review and approve changes before they're applied (`/plan <task>`)
-- 🔍 **Auditable tool use** — every file read, write, and shell command is explicit and confirmable
-- ↩️ **Snapshot & rewind** — undo a whole session's writes with `/rewind`
-- 🔌 **MCP support** — connect any [Model Context Protocol](https://modelcontextprotocol.io) server
-- 💬 **Session management** — resume conversations across sessions
-- ⚡ **Lightweight** — no heavy framework, just `npm install` and go
-
-## Why OpenCLI?
-
-| | OpenCLI | Claude Code | Gemini CLI | Aider |
-|---|:---:|:---:|:---:|:---:|
-| **Model-agnostic** | ✅ Any provider | ❌ Claude only | ❌ Gemini only | ✅ Multiple |
-| **Open source** | ✅ MIT | ❌ Proprietary | ✅ Apache-2.0 | ✅ Apache-2.0 |
-| **Sandboxed execution** | ✅ OS-level | ❌ | ❌ | ❌ |
-| **Extensible skills** | ✅ Agent Skills | ✅ Slash commands | ✅ Agent Skills | ❌ |
-| **Lightweight (zero config)** | ✅ | ✅ | ✅ | ⚠️ Git required |
-
-📖 **Full breakdown:** [OpenCLI vs Claude Code vs Gemini CLI vs Aider](docs/comparison.md) — an honest, in-depth comparison of where each tool fits.
-
-## Frequently Asked Questions (FAQ)
-
-**What is the best open-source alternative to Claude Code?**
-OpenCLI is designed as an open-source, model-agnostic alternative to Claude Code. It supports the same Agent Skills standard and provides a similar seamless terminal experience, but allows you to use Claude, Gemini, or OpenAI models.
-
-**How do I run Gemini or Claude in the terminal?**
-Install OpenCLI via `npm install -g @zjshen/opencli`, set your `GEMINI_API_KEY` or `ANTHROPIC_API_KEY`, and run the `opencli` command. You can switch models easily using `opencli config --model <model-name>`.
-
-**How do I safely sandbox an AI coding agent?**
-OpenCLI automatically sandboxes its bash execution environment by default. On macOS, it uses `sandbox-exec`, and on Linux, it uses `bwrap`. This ensures the AI cannot accidentally destroy your system or access unauthorized files outside your project.
-
-**Does OpenCLI support the Model Context Protocol (MCP)?**
-Yes, OpenCLI fully supports MCP servers. You can configure them using `opencli mcp add` to grant the agent secure access to local databases, GitHub issues, and other external tools.
 
 ## Usage
 
-**Interactive REPL:**
 ```bash
-opencli
-# or
-npm run dev
+ruby
 ```
 
-**One-shot prompt:**
-```bash
-opencli run "explain src/core/agent.ts"
-```
-
-**Select a model:**
-```bash
-# Gemini (default)
-opencli chat --model gemini-3.1-pro-preview
-
-# Claude
-opencli chat --model claude-sonnet-4-6
-```
-
-**Set default model:**
-```bash
-opencli config --model claude-sonnet-4-6
-```
-
-## Skills
-
-Invoke with `/skill-name [args]` or let the model auto-activate based on your request.
-
-| Skill | Description |
-|-------|-------------|
-| `/review [target]` | Code review for correctness, security, and style |
-| `/explain [target]` | Explain code, a concept, or a file |
-| `/debug [error]` | Diagnose and fix a reported error |
-| `/test [target]` | Write tests for a function or module |
-| `/commit` | Draft and create a git commit from staged changes |
-
-**Built-in commands:** `/help`, `/plan <task>`, `/rewind`, `/clear`, `/exit`
-
-### Adding Your Own Skills
-
-Project-scoped (this repo only):
-```bash
-mkdir -p .opencli/skills/my-skill
-```
-
-User-global (all projects):
-```bash
-mkdir -p ~/.opencli/skills/my-skill
-```
-
-Create `SKILL.md` in the directory:
-
-```yaml
----
-name: my-skill
-description: What it does and when to use it.
-allowed-tools: Read Bash
----
-
-Instructions for the agent...
-
-Current git status:
-!{git status --short}
-
-Arguments: $ARGUMENTS
-```
-
-Skills follow the [Agent Skills open standard](https://agentskills.io) and are compatible with Claude Code and the official Gemini CLI.
-
-## Tools
-
-| Tool | Description |
-|------|-------------|
-| `read` | Read file contents with optional line range |
-| `write` | Create or overwrite a file |
-| `edit` | Exact string find-and-replace in a file |
-| `glob` | Find files by pattern (e.g. `**/*.ts`) |
-| `grep` | Regex search across file contents |
-| `bash` | Run shell commands (blocks destructive patterns) |
-
-## Models and providers
-
-OpenCLI is provider-agnostic. Alongside Gemini, Claude, and OpenAI, it ships presets for
-open-source models and local inference — pick one with `--provider`, and the base URL,
-API-key variable, and context window are configured for you.
-
-### Local models with Ollama
-
-No API key, no spend, no network:
+starts the interactive agent. One-shot prompts:
 
 ```bash
-ollama pull qwen2.5-coder:14b
-opencli --provider ollama --model qwen2.5-coder:14b
+ruby run "Analyze this project and find possible bugs"
 ```
 
-OpenCLI queries Ollama for each model's real context window (a stock `qwen2.5-coder:14b`
-is 32 768 tokens, not the generic default) and warns at startup if the selected model
-can't call tools. It also recovers tool calls from models that emit them as plain JSON
-text instead of structured calls — common with open-weight models, and the difference
-between an agent that connects and one that actually works.
+## API Key
 
-### Hosted open-source models
+On first run you will be prompted to paste your RubyCLI API key. It is
+validated against the RubyCLI API and stored locally at
+`~/.rubycli/config.json` (never committed, never logged in full).
+
+You can also provide the key via environment variable — useful for CI/CD.
+An env-provided key is never persisted automatically:
 
 ```bash
-export MOONSHOT_API_KEY="..."   # Kimi K3 — 1M context
-opencli --provider moonshot --model kimi-k3
-
-export ZAI_API_KEY="..."        # GLM-5.2 — 1M context, MIT-licensed
-opencli --provider zai --model glm-5.2
-
-export DEEPSEEK_API_KEY="..."   # DeepSeek V4
-opencli --provider deepseek --model deepseek-v4-pro
+export RUBYCLI_API_KEY=ruby_sk_...
 ```
 
-| Provider | `--provider` | Example model | Key env |
-|---|---|---|---|
-| Google Gemini | `gemini` | `gemini-3.1-flash-lite-preview` | `GEMINI_API_KEY` |
-| Anthropic | `anthropic` | `claude-opus-5` | `ANTHROPIC_API_KEY` |
-| OpenAI | `openai` | `gpt-4o` | `OPENAI_API_KEY` |
-| Ollama (local) | `ollama` | `qwen2.5-coder:14b` | _(none)_ |
-| Moonshot (Kimi) | `moonshot` | `kimi-k3` | `MOONSHOT_API_KEY` |
-| Z.ai (GLM) | `zai` | `glm-5.2` | `ZAI_API_KEY` |
-| DeepSeek | `deepseek` | `deepseek-v4-pro` | `DEEPSEEK_API_KEY` |
-| Qwen (DashScope) | `dashscope` | `qwen3.7-max` | `DASHSCOPE_API_KEY` |
-| OpenRouter | `openrouter` | _(any gateway model)_ | `OPENROUTER_API_KEY` |
-
-Any other OpenAI-compatible endpoint (LiteLLM, vLLM, a corporate proxy) works via
-`--provider openai --base-url <url>`. Override a context window when a proxy truncates it
-or a local Modelfile raises it:
-
-```jsonc
-// ~/.opencli/config.json
-{ "modelOverrides": { "qwen2.5-coder:14b": { "contextWindow": 65536 } } }
-```
+Priority: `RUBYCLI_API_KEY` env var → local config → interactive prompt.
 
 ## Configuration
 
-Config is stored at `~/.opencli/config.json`.
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `model` | `gemini-3.1-flash-lite-preview` | Model ID (Gemini or Claude) |
-| `apiKey` | — | Gemini API key (prefer env var) |
-| `anthropicApiKey` | — | Anthropic API key (prefer env var) |
-| `temperature` | `0.7` | Generation temperature |
-| `maxTokens` | `8192` | Max output tokens |
-| `historySize` | `50` | Messages to keep in context |
-
-Environment variables take precedence over config file:
-
-| Variable | Description |
-|----------|-------------|
-| `GEMINI_API_KEY` | Gemini API key |
-| `ANTHROPIC_API_KEY` | Anthropic API key |
-| `OPENAI_API_KEY` | OpenAI API key |
-| `MOONSHOT_API_KEY` | Moonshot / Kimi API key |
-| `ZAI_API_KEY` | Z.ai / GLM API key |
-| `DEEPSEEK_API_KEY` | DeepSeek API key |
-| `DASHSCOPE_API_KEY` | Alibaba DashScope / Qwen API key |
-| `OPENROUTER_API_KEY` | OpenRouter gateway API key |
-| `OPENCLI_MODEL` | Model override (beats `--model` and config) |
-| `OPENCLI_SANDBOX` | Sandbox mode override: `auto` \| `strict` \| `off` |
-| `OPENCLI_SNAPSHOT` | Set to `off` to disable git snapshot/rewind |
-| `OPENCLI_SYSTEM_MD` | Path to a Markdown file that overrides the default system instruction (for prompt hill-climbing) |
-| `OPENCLI_MAX_TOOL_OUTPUT` | Max chars before bash/grep/glob/web_fetch output is middle-truncated (default: 20 000) |
-
-## Sandbox Isolation
-
-The `bash` tool runs inside an OS-level sandbox by default (`--sandbox auto`):
-
-- **macOS** — uses `sandbox-exec` (built-in, no install required). Writes outside common dev locations are denied; reads and network are unrestricted.
-- **Linux** — uses `bwrap` (bubblewrap) via user namespaces. Same contract. Falls back to passthrough with a warning if `bwrap` is not installed.
-- **Windows / other** — no native sandbox; runs without isolation with a warning.
-
-| Mode | Behaviour |
-|------|-----------|
-| `auto` (default) | Prevents accidental writes to system & credential paths (`/etc`, `~/.ssh`, `~/.aws`, etc.). Reads and network unrestricted. Writes allowed inside CWD, `/tmp`, and common dev dirs (`~/.npm`, `~/.cache`, `~/.cargo`, `~/Library/Caches`, …). **Not a security boundary** — use `strict` for real isolation. |
-| `strict` | Real isolation: no external network, writes only to CWD + tmp, reads restricted to CWD + system binaries. |
-| `off` | No sandbox |
-
-> **⚠ Behavior change (May 2026):** Prior to this release, `--sandbox auto` denied all external network access. As of [#127](https://github.com/zjshen14/opencli/issues/127), `auto` allows external network by default — every real coding workflow (`npm install`, `gh`, `git clone`, `curl`) was blocked otherwise. If you relied on the previous network-deny behavior, use `--sandbox strict` or `--sandbox off` plus an external firewall.
+Most users need nothing beyond the API key. Advanced overrides:
 
 ```bash
-# CLI flag
-opencli chat --sandbox off
-
-# Environment variable
-OPENCLI_SANDBOX=off opencli chat
-
-# Config file
-opencli config  # shows current config
+ruby config --api-key <key>      # set the API key
+ruby config --model <model>      # set the default model (default: ruby-auto)
+ruby config --base-url <url>     # custom API endpoint
+ruby model <model>               # shortcut to set the default model
 ```
 
-## Snapshot & rewind
+Environment variables:
 
-Before the agent writes any file, OpenCLI automatically takes a git snapshot of the current working tree. If the agent makes changes you want to undo, run `/rewind` in the REPL to restore all files to their pre-write state.
+| Variable           | Purpose                              |
+| ------------------ | ------------------------------------ |
+| `RUBYCLI_API_KEY`  | API key (highest priority)           |
+| `RUBYCLI_BASE_URL` | Override the API endpoint            |
+| `RUBYCLI_MODEL`    | Override the default model           |
+| `RUBYCLI_DEBUG=1`  | Debug output (endpoint, timing, usage — never the key) |
 
-```
-/rewind    # restore working tree to the state before this session's writes
-```
-
-- Requires git ≥ 2.23 and a git repository in the project directory.
-- Only tracked files are covered; **untracked files created by the agent are not removed** by `/rewind` (use `git clean -f` manually for those).
-- Staged changes (index) are not touched — only the working tree is restored.
-- Set `OPENCLI_SNAPSHOT=off` to disable the feature entirely.
-
-## MCP servers
-
-OpenCLI can connect to any [Model Context Protocol](https://modelcontextprotocol.io) server and expose its tools to the agent as `mcp__<server>__<tool>`.
-
-### Managing servers
-
-```bash
-opencli mcp add                            # interactive wizard
-opencli mcp add myserver npx -y @myco/mcp-server  # one-shot (stdio)
-opencli mcp add api --transport http --url http://localhost:3000/mcp  # HTTP
-opencli mcp list                           # list configured servers with live status
-opencli mcp test myserver                  # probe connection and list tools
-opencli mcp remove myserver                # remove a server
-```
-
-### Configuration format (`~/.opencli/mcp.json`)
-
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-      "callTimeout": 30000
-    },
-    "api": {
-      "transport": "http",
-      "url": "http://localhost:3000/mcp",
-      "headers": { "Authorization": "Bearer ${API_TOKEN}" }
-    }
-  }
-}
-```
-
-- **`${VAR}`** in `command`, `args`, `url`, and `headers` is expanded from environment variables at startup. Unset variables expand to `""` with a warning.
-- **`callTimeout`** (milliseconds, per-server) overrides the global default of 60 000 ms.
-- Tool names are prefixed as `mcp__<server>__<tool>`. Non-alphanumeric characters in server names (except `-`) are replaced with `_`.
-- All MCP tool calls require HITL confirmation. The confirmation dialog offers extra choices: allow this tool with any args (`t`), or allow all tools from this server (`s`).
-
-### In-session management
-
-```
-/mcp              # list configured servers
-/mcp test <name>  # probe a server inline
-```
-
-## Architecture
-
-Five-layer design — see [`docs/architecture.md`](docs/architecture.md) for the full spec.
-
-```
-CLI Layer  →  Agent Core  →  LLM Provider (Gemini / Claude)
-                  ↓
-          Tool System  |  Skill System  |  State
-```
+The default model is `ruby-auto` — the RubyCLI backend routes it to the best
+available provider. You never need to pick a provider.
 
 ## Development
 
 ```bash
-npm run dev          # Run with tsx (auto-loads .env)
-npm run build        # Bundle with tsup → dist/
-npm run typecheck    # TypeScript type check
-npm run lint         # ESLint
-npm run lint:fix     # ESLint with auto-fix
-npm run format       # Prettier
-npm test             # Vitest (offline unit tests)
-npm run eval         # Cross-provider eval matrix (requires npm run build first)
+npm install            # install dependencies
+npm run dev            # run the CLI from source (auto-loads .env)
+npm test               # run test suite (vitest)
+npm run typecheck      # tsc --noEmit
+npm run lint           # eslint
+npm run format         # prettier
+npm run build          # bundle to dist/
 ```
 
-`npm run eval` makes real API calls and costs money (~$1–5 per full run). It requires a **billing-enabled** API key — free-tier quotas are insufficient for preview models.
+## Upstream
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development guide.
-
-New contributors: check the [good first issues](https://github.com/zjshen14/opencli/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) for scoped, well-described starting points.
-
-## Star History
-
-<a href="https://star-history.com/#zjshen14/opencli&Date">
-  <img src="https://api.star-history.com/svg?repos=zjshen14/opencli&type=Date" alt="OpenCLI star history chart" width="600">
-</a>
+This project is a fork of [OpenCLI](https://github.com/zjshen14/opencli)
+(MIT License, Copyright (c) 2025 Zhijie Shen). See [LICENSE](LICENSE) for the
+full license text, which retains the original copyright notice.
 
 ## License
 
-[MIT](LICENSE) © Zhijie Shen
+MIT — see [LICENSE](LICENSE).

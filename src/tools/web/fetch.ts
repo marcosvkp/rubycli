@@ -2,7 +2,9 @@ import { lookup } from "node:dns/promises";
 import { BlockList } from "node:net";
 import type { Tool } from "../base.js";
 
-const MAX_OUTPUT = Number(process.env.OPENCLI_MAX_TOOL_OUTPUT ?? 20_000);
+const MAX_OUTPUT = Number(
+  process.env.RUBYCLI_MAX_TOOL_OUTPUT ?? process.env.OPENCLI_MAX_TOOL_OUTPUT ?? 20_000,
+);
 
 // Hard cap on bytes read from the wire, independent of the post-processing output
 // truncation. Prevents a malicious endpoint from exhausting memory with a huge body.
@@ -12,7 +14,9 @@ const MAX_RESPONSE_BYTES = 5_000_000;
 // local dev server). Default is deny, which is the safe choice for an agent that may
 // be driven by prompt-injected content. Read at call time so tests / runtime env
 // changes take effect without a re-import.
-const allowPrivate = (): boolean => process.env.OPENCLI_WEB_FETCH_ALLOW_PRIVATE === "1";
+const allowPrivate = (): boolean =>
+  (process.env.RUBYCLI_WEB_FETCH_ALLOW_PRIVATE ?? process.env.OPENCLI_WEB_FETCH_ALLOW_PRIVATE) ===
+  "1";
 
 // SSRF blocklist: addresses web_fetch must never reach unless explicitly allowed.
 // Covers RFC1918 private ranges, loopback, link-local (incl. cloud metadata service
@@ -53,7 +57,7 @@ function isBlockedAddress(address: string, family?: number): boolean {
 /**
  * Validate that a URL is safe to fetch: http(s) scheme only, and the hostname must
  * not resolve to a private/loopback/link-local address unless the caller opted in via
- * OPENCLI_WEB_FETCH_ALLOW_PRIVATE=1.
+ * RUBYCLI_WEB_FETCH_ALLOW_PRIVATE=1.
  *
  * Resolving via dns.lookup (getaddrinfo) catches literal IPs (`127.0.0.1`,
  * `169.254.169.254`), `localhost`, and hostnames whose A/AAAA records point inside
@@ -92,7 +96,7 @@ export async function assertSafeUrl(rawUrl: string): Promise<void> {
       throw new Error(
         `Refused to fetch '${rawUrl}': host '${host}' resolves to a private, loopback, or ` +
           `link-local address (${address}), which is blocked to prevent SSRF. Set ` +
-          `OPENCLI_WEB_FETCH_ALLOW_PRIVATE=1 to allow.`,
+          `RUBYCLI_WEB_FETCH_ALLOW_PRIVATE=1 to allow.`,
       );
     }
   }
@@ -160,7 +164,7 @@ export const webFetchTool: Tool = {
   async execute({ url }) {
     try {
       const res = await safeFetch(url as string, {
-        headers: { "User-Agent": "opencli/1.0 (https://github.com/zjshen14/opencli)" },
+        headers: { "User-Agent": "rubycli/1.0 (https://github.com/marcosvkp/rubycli)" },
         signal: AbortSignal.timeout(15_000),
       });
       if (!res.ok) {

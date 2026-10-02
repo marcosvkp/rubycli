@@ -32,7 +32,7 @@ describe("Session.create", () => {
 
   it("exposes tmpDir scoped to session id", async () => {
     const session = await Session.create(CWD);
-    expect(session.tmpDir).toBe(join(CWD, ".opencli", "tmp", session.id));
+    expect(session.tmpDir).toBe(join(CWD, ".rubycli", "tmp", session.id));
   });
 });
 
@@ -89,7 +89,7 @@ describe("Session.loadMessages", () => {
   });
 
   it("error for nonexistent session does not leak internal file paths", async () => {
-    await expect(Session.loadMessages("some-id", CWD)).rejects.toThrow(/opencli sessions/);
+    await expect(Session.loadMessages("some-id", CWD)).rejects.toThrow(/ruby sessions/);
   });
 
   it("throws when no sessions exist for 'latest'", async () => {
@@ -552,22 +552,27 @@ describe("redactSecrets (GHSA-x245-5r32-45m5)", () => {
 });
 
 describe("Session logging hygiene (GHSA-x245-5r32-45m5)", () => {
-  it("writes the session log with restrictive file permissions (0o600)", async () => {
-    const session = await Session.create(CWD);
-    const dir = join(tmpHome, ".opencli", "projects", Buffer.from(CWD).toString("base64url"));
-    const file = join(dir, `${session.id}.jsonl`);
-    const s = await stat(file);
-    expect(s.mode & 0o777).toBe(0o600);
-    const ds = await stat(dir);
-    expect(ds.mode & 0o777).toBe(0o700);
-  });
+  // Windows has no POSIX chmod: stat().mode always reports 0o666. The permission
+  // guarantee holds on Linux/macOS.
+  it.skipIf(process.platform === "win32")(
+    "writes the session log with restrictive file permissions (0o600)",
+    async () => {
+      const session = await Session.create(CWD);
+      const dir = join(tmpHome, ".rubycli", "projects", Buffer.from(CWD).toString("base64url"));
+      const file = join(dir, `${session.id}.jsonl`);
+      const s = await stat(file);
+      expect(s.mode & 0o777).toBe(0o600);
+      const ds = await stat(dir);
+      expect(ds.mode & 0o777).toBe(0o700);
+    },
+  );
 
   it("does not persist a PEM key read by the agent into the log", async () => {
     const session = await Session.create(CWD);
     const pem =
       "-----BEGIN RSA PRIVATE KEY-----\nMIIBOsingingNGINGdata\n-----END RSA PRIVATE KEY-----";
     await session.log({ type: "tool_result", name: "read", result: pem });
-    const dir = join(tmpHome, ".opencli", "projects", Buffer.from(CWD).toString("base64url"));
+    const dir = join(tmpHome, ".rubycli", "projects", Buffer.from(CWD).toString("base64url"));
     const raw = await readFile(join(dir, `${session.id}.jsonl`), "utf8");
     expect(raw).not.toContain("MIIBOsingingNGINGdata");
     expect(raw).toContain("[REDACTED PRIVATE KEY]");
@@ -580,7 +585,7 @@ describe("Session logging hygiene (GHSA-x245-5r32-45m5)", () => {
       name: "bash",
       result: "export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE",
     });
-    const dir = join(tmpHome, ".opencli", "projects", Buffer.from(CWD).toString("base64url"));
+    const dir = join(tmpHome, ".rubycli", "projects", Buffer.from(CWD).toString("base64url"));
     const raw = await readFile(join(dir, `${session.id}.jsonl`), "utf8");
     expect(raw).not.toContain("AKIAIOSFODNN7EXAMPLE");
     expect(raw).toContain("[REDACTED");
@@ -597,7 +602,7 @@ describe("Session logging hygiene (GHSA-x245-5r32-45m5)", () => {
       name: "read",
       result: 'api_key = "sk-1234567890abcdef"',
     });
-    const dir = join(tmpHome, ".opencli", "projects", Buffer.from(CWD).toString("base64url"));
+    const dir = join(tmpHome, ".rubycli", "projects", Buffer.from(CWD).toString("base64url"));
     const raw = await readFile(join(dir, `${session.id}.jsonl`), "utf8");
     for (const line of raw.split("\n")) {
       if (line.trim() === "") continue;
@@ -614,7 +619,7 @@ describe("Session logging hygiene (GHSA-x245-5r32-45m5)", () => {
       name: "bash",
       result: 'config: api_key = "sk-1234567890abcdef" done',
     });
-    const dir = join(tmpHome, ".opencli", "projects", Buffer.from(CWD).toString("base64url"));
+    const dir = join(tmpHome, ".rubycli", "projects", Buffer.from(CWD).toString("base64url"));
     const raw = await readFile(join(dir, `${session.id}.jsonl`), "utf8");
     expect(raw).not.toContain("sk-1234567890abcdef");
     expect(raw).toContain("[REDACTED]");

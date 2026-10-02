@@ -7,7 +7,7 @@ export interface Settings {
 }
 
 export async function loadSettings(cwd = process.cwd()): Promise<Settings> {
-  const file = join(cwd, ".opencli", "settings.json");
+  const file = join(cwd, ".rubycli", "settings.json");
   try {
     const raw = await readFile(file, "utf8");
     return JSON.parse(raw) as Settings;
@@ -17,7 +17,7 @@ export async function loadSettings(cwd = process.cwd()): Promise<Settings> {
 }
 
 export async function saveSettings(patch: Partial<Settings>, cwd = process.cwd()): Promise<void> {
-  const dir = join(cwd, ".opencli");
+  const dir = join(cwd, ".rubycli");
   const file = join(dir, "settings.json");
   const current = await loadSettings(cwd);
   const updated: Settings = {

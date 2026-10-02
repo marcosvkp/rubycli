@@ -35,6 +35,7 @@ const COMPACTION_MODELS: Record<string, string> = {
   anthropic: "claude-haiku-4-5-20251001",
   gemini: "gemini-3.1-flash-lite-preview",
   openai: "gpt-4.1-mini",
+  rubycli: "ruby-auto",
 };
 
 /**
@@ -75,6 +76,14 @@ export function createClient(
     );
   }
 
+  // Friendly-error branding: the rubycli provider reports itself as "RubyCLI" with a
+  // remediation hint matching the current CLI surface; legacy providers keep "[OI]" etc.
+  const errorLabel = providerId === "rubycli" ? "RubyCLI" : (preset?.label ?? providerId);
+  const keyHint =
+    providerId === "rubycli"
+      ? `Invalid RubyCLI API key. Run: ruby config --api-key <key> (or set RUBYCLI_API_KEY)`
+      : undefined;
+
   // An explicit --base-url always overrides the preset's default endpoint.
   const baseUrl = options?.baseUrl ?? preset?.baseUrl;
   const wire = preset?.wire ?? "gemini";
@@ -89,6 +98,8 @@ export function createClient(
       temperature: options?.temperature,
       baseUrl,
       salvage: preset?.salvageToolCalls ?? false,
+      providerLabel: errorLabel,
+      keyHint,
       onWarn: options?.onWarn,
     });
   }

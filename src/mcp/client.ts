@@ -39,7 +39,7 @@ export class McpClient {
         env: childEnv,
       });
     }
-    this.sdkClient = new Client({ name: "opencli", version: "0.1.0" });
+    this.sdkClient = new Client({ name: "rubycli", version: "0.1.0" });
     try {
       await this.sdkClient.connect(transport);
     } catch (err) {

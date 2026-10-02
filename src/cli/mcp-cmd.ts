@@ -63,7 +63,7 @@ export async function writeMcpConfig(updater: (current: McpConfig) => McpConfig)
   await rename(tmp, configPath);
 }
 
-// ── `opencli mcp add` ─────────────────────────────────────────────────────────
+// ── `ruby mcp add` ─────────────────────────────────────────────────────────
 
 async function mcpAdd(
   nameArg: string | undefined,
@@ -82,7 +82,7 @@ async function mcpAdd(
   let serverConfig: McpServerConfig;
 
   if (nameArg && rest.length > 0) {
-    // One-shot form: opencli mcp add <name> -- <command> [args...]
+    // One-shot form: ruby mcp add <name> -- <command> [args...]
     name = nameArg;
     const transport = opts.transport ?? "stdio";
     if (transport === "http") {
@@ -196,12 +196,12 @@ async function mcpAdd(
   process.stdout.write(`[mcp] saved to ${join(AGENT_DIR, "mcp.json")}\n`);
 }
 
-// ── `opencli mcp list` ────────────────────────────────────────────────────────
+// ── `ruby mcp list` ────────────────────────────────────────────────────────
 
 async function mcpList(opts: { noProbe?: boolean }): Promise<void> {
   const config = await loadMcpConfig(AGENT_DIR);
   if (!config || Object.keys(config.mcpServers).length === 0) {
-    process.stdout.write("No MCP servers configured. Run `opencli mcp add` to add one.\n");
+    process.stdout.write("No MCP servers configured. Run `ruby mcp add` to add one.\n");
     return;
   }
 
@@ -258,7 +258,7 @@ async function mcpList(opts: { noProbe?: boolean }): Promise<void> {
   }
 }
 
-// ── `opencli mcp test` ────────────────────────────────────────────────────────
+// ── `ruby mcp test` ────────────────────────────────────────────────────────
 
 async function mcpTest(name: string): Promise<void> {
   const config = await loadMcpConfig(AGENT_DIR);
@@ -284,7 +284,7 @@ async function mcpTest(name: string): Promise<void> {
   }
 }
 
-// ── `opencli mcp remove` ─────────────────────────────────────────────────────
+// ── `ruby mcp remove` ─────────────────────────────────────────────────────
 
 async function mcpRemove(name: string, opts: { yes?: boolean }): Promise<void> {
   const config = await loadMcpConfig(AGENT_DIR);
@@ -323,7 +323,7 @@ export function registerMcpCommand(program: Command): void {
 
   mcp
     .command("add [name] [rest...]")
-    .description("Add an MCP server to ~/.opencli/mcp.json")
+    .description("Add an MCP server to ~/.rubycli/mcp.json")
     .option(
       "--transport <transport>",
       "Transport type: stdio | http (default: stdio)",
@@ -357,7 +357,7 @@ export function registerMcpCommand(program: Command): void {
 
   mcp
     .command("remove <name>")
-    .description("Remove an MCP server from ~/.opencli/mcp.json")
+    .description("Remove an MCP server from ~/.rubycli/mcp.json")
     .option("-y, --yes", "Skip confirmation prompt")
     .action(async (name: string, opts) => {
       await mcpRemove(name, opts as { yes?: boolean });

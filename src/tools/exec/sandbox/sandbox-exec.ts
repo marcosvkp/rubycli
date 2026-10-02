@@ -208,7 +208,7 @@ export class SandboxExecRunner implements SandboxRunner {
       return;
     }
 
-    this.profilePath = join("/tmp", `opencli-sandbox-${randomUUID()}.sb`);
+    this.profilePath = join("/tmp", `rubycli-sandbox-${randomUUID()}.sb`);
     const profile = mode === "strict" ? buildStrictProfile(cwd) : buildAutoProfile(cwd, home);
 
     this.ready = writeFile(this.profilePath, profile, { mode: 0o600 }).catch((err: unknown) => {
