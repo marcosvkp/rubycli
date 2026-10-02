@@ -14,7 +14,7 @@ import { createConfirmFn } from "./confirm.js";
 import { runAgentTurn } from "./runner.js";
 import { runPlanFlow } from "./plan.js";
 import type { SnapshotManager } from "../state/snapshot.js";
-import { fetchRemoteModels } from "./models.js";
+import { fetchRemoteModels, remoteContextWindow, type RemoteModel } from "./models.js";
 import { createClient, createCompactionClient } from "../providers/factory.js";
 import { redactRubyKey } from "../rubycli.js";
 
@@ -301,14 +301,17 @@ async function handleModelCommand(
     printInfo("Available models:");
     models.forEach((m, i) => {
       const marker = m.id === current ? chalk.green("●") : " ";
-      process.stderr.write(`${marker} ${chalk.bold(`${i + 1}.`)} ${m.id}\n`);
+      process.stderr.write(`${marker} ${chalk.bold(`${i + 1}.`)} ${formatModelEntry(m)}\n`);
     });
     printInfo(`\nCurrent: ${current} — switch with /model <name-or-number>`);
     return;
   }
 
   // Resolve numeric shortcuts against a fresh listing; otherwise take the arg as-is.
+  // The API-reported context window (when present) travels with the pick so the
+  // status line reflects the real limit instead of the registry default.
   let target = arg;
+  let targetWindow: number | undefined;
   if (/^\d+$/.test(arg) && connection) {
     const { models } = await fetchRemoteModels(connection.baseUrl, connection.apiKey);
     const picked = models[parseInt(arg, 10) - 1];
@@ -317,6 +320,12 @@ async function handleModelCommand(
       return;
     }
     target = picked.id;
+    targetWindow = remoteContextWindow(picked);
+  } else if (connection) {
+    const { models } = await fetchRemoteModels(connection.baseUrl, connection.apiKey);
+    targetWindow = remoteContextWindow(
+      models.find((m) => m.id === target) ?? ({ id: target } as RemoteModel),
+    );
   }
 
   try {
@@ -332,13 +341,29 @@ async function handleModelCommand(
       provider,
       baseUrl: connection?.baseUrl,
     });
-    agent.setModel(target, client, compactionClient, connection?.contextWindow, provider);
+    // Precedence: API-reported window > startup-resolved window > registry default.
+    agent.setModel(
+      target,
+      client,
+      compactionClient,
+      targetWindow ?? connection?.contextWindow,
+      provider,
+    );
     printInfo(`Switched to ${target} (session only — default unchanged).`);
   } catch (err) {
     printError(
       `Could not switch model: ${redactRubyKey(err instanceof Error ? err.message : String(err))}`,
     );
   }
+}
+
+/** One line for the /model list, with the real context window when the API reports it. */
+function formatModelEntry(m: RemoteModel): string {
+  const ctx = remoteContextWindow(m);
+  if (ctx === undefined) return m.id;
+  const label =
+    ctx >= 1_000_000 ? `${(ctx / 1_000_000).toFixed(0)}M` : `${Math.round(ctx / 1000)}k`;
+  return `${m.id} ${chalk.dim(`(${label} ctx)`)}`;
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

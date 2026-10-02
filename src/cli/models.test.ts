@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { fetchRemoteModels, resolveBaseUrl } from "./models.js";
+import { fetchRemoteModels, resolveBaseUrl, remoteContextWindow } from "./models.js";
 import type { Config } from "../state/config.js";
 
 const realFetch = globalThis.fetch;
@@ -63,6 +63,35 @@ describe("fetchRemoteModels", () => {
     const { models, error } = await fetchRemoteModels("https://x/v1", "k");
     expect(models).toEqual([]);
     expect(error).not.toContain("SUPERSECRET123");
+  });
+
+  it("parses API-reported context windows", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              data: [
+                { id: "ruby-auto", context_window: 1_000_000 },
+                { id: "ruby-fast", contextWindow: 200_000 },
+                { id: "ruby-plain" },
+              ],
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+    const { models } = await fetchRemoteModels("https://x/v1", "k");
+    expect(remoteContextWindow(models[0])).toBe(1_000_000);
+    expect(remoteContextWindow(models[1])).toBe(200_000);
+    expect(remoteContextWindow(models[2])).toBeUndefined();
+  });
+
+  it("rejects non-positive or non-numeric context windows", () => {
+    expect(remoteContextWindow({ id: "a", context_window: 0 })).toBeUndefined();
+    expect(remoteContextWindow({ id: "a", context_window: -5 })).toBeUndefined();
+    expect(remoteContextWindow({ id: "a" })).toBeUndefined();
   });
 
   it("rejects malformed response shapes", async () => {

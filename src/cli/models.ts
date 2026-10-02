@@ -1,11 +1,25 @@
 import { DEFAULT_BASE_URL, BASE_URL_ENV, redactRubyKey } from "../rubycli.js";
 import type { Config } from "../state/config.js";
 
-/** A model entry as returned by GET <baseUrl>/models (OpenAI list shape). */
+/**
+ * A model entry as returned by GET <baseUrl>/models (OpenAI list shape).
+ * RubyCLI Cloud may additionally report the real context window — when
+ * present it takes precedence over the static registry table.
+ */
 export interface RemoteModel {
   id: string;
   created?: number;
   owned_by?: string;
+  /** Real context window in tokens, when the API reports it. */
+  context_window?: number;
+  /** Alias some gateways use for the same value. */
+  contextWindow?: number;
+}
+
+/** Extract the API-reported context window from a model entry, if any. */
+export function remoteContextWindow(m: RemoteModel): number | undefined {
+  const raw = m.context_window ?? m.contextWindow;
+  return typeof raw === "number" && raw > 0 ? Math.floor(raw) : undefined;
 }
 
 export interface FetchModelsResult {

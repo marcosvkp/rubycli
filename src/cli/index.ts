@@ -7,6 +7,7 @@ import {
   providerDetectionWarning,
 } from "../providers/registry.js";
 import { resolveContextWindow } from "./context-window.js";
+import { fetchRemoteModels, remoteContextWindow } from "./models.js";
 import { Agent } from "../core/agent.js";
 import { createDefaultRegistry } from "../tools/index.js";
 import { SkillRegistry } from "../skills/registry.js";
@@ -321,6 +322,26 @@ function makeDebugHandler(): (event: ObservabilityEvent) => void {
   return (event) => process.stderr.write(redactRubyKey(JSON.stringify(event)) + "\n");
 }
 
+/**
+ * Look up the startup model's real context window from GET <baseUrl>/models.
+ * Returns the API-reported window on a hit, otherwise the pre-resolved value.
+ * Silent on any failure — context-window resolution must never block startup.
+ */
+async function resolveLiveContextWindow(
+  model: string,
+  baseUrl: string,
+  apiKey: string,
+  fallback: number | undefined,
+): Promise<number | undefined> {
+  try {
+    const { models } = await fetchRemoteModels(baseUrl, apiKey);
+    const hit = models.find((m) => m.id === model);
+    return (hit && remoteContextWindow(hit)) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function resolveSandboxMode(flagValue: string | undefined, config: Config): SandboxMode {
   const raw =
     flagValue ??
@@ -472,7 +493,16 @@ async function createAgent(
 
   const systemInstruction = await loadSystemInstruction();
   const compactionClient = createCompactionClient(model, apiKey, { provider, baseUrl });
-  const { contextWindow, warnings } = await resolveContextWindow(model, provider, baseUrl, config);
+  const { contextWindow: resolvedWindow, warnings } = await resolveContextWindow(
+    model,
+    provider,
+    baseUrl,
+    config,
+  );
+  // The live API list is authoritative for the context window when it reports one:
+  // a static registry entry (or the 100k default) would otherwise under-report
+  // models the registry doesn't know about yet.
+  const contextWindow = await resolveLiveContextWindow(model, baseUrl, apiKey, resolvedWindow);
   for (const warning of warnings) {
     process.stderr.write(`[${CLI_COMMAND}] warn: ${redactRubyKey(warning)}\n`);
   }
