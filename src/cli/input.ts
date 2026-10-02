@@ -18,6 +18,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import chalk from "chalk";
 import { AGENT_DIR } from "../state/config.js";
+import { isFooterActive, updateFooter } from "./status-footer.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -294,8 +295,11 @@ export interface ReadLineOpts {
   /**
    * Status segments drawn above the prompt each render (model, context,
    * tok/s, mode…). Returned fresh on every render so values stay live.
+   * Ignored while the pinned footer is active (it owns the status display).
    */
   statusBar?: () => string;
+  /** Footer line (mode row) shown under the prompt. Also mirrored to the pinned footer. */
+  footerBar?: () => string;
 }
 
 /**
@@ -342,8 +346,16 @@ export async function readLine(
       let out = A.up(cursorRowsBelowTop) + A.clearLine + A.clearDown;
 
       // Status header (model · context · tok/s · mode), re-evaluated each render.
-      const status = opts?.statusBar?.();
+      // While the pinned footer is active it owns the status display, so the
+      // inline header is skipped (avoids a duplicated bar).
+      const footerOn = isFooterActive();
+      const status = footerOn ? undefined : opts?.statusBar?.();
       if (status) out += status + "\n\n";
+
+      // Keep the pinned footer live while typing (mode changes via Shift+Tab).
+      if (footerOn) {
+        updateFooter(opts?.statusBar?.() ?? "", opts?.footerBar?.() ?? "");
+      }
 
       // Draw prompt + each input line. PROMPT for the first line, CONT_PROMPT
       // for continuations so the user can see which lines are extensions.

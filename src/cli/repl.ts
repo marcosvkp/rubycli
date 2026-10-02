@@ -17,6 +17,7 @@ import type { SnapshotManager } from "../state/snapshot.js";
 import { fetchRemoteModels, remoteContextWindow, type RemoteModel } from "./models.js";
 import { loadGoal, setGoal, setGoalStatus, clearGoal, noteGoal, type Goal } from "../state/goal.js";
 import { sessionStatus } from "./status-state.js";
+import { activateFooter, releaseFooter, updateFooter } from "./status-footer.js";
 import { createClient, createCompactionClient } from "../providers/factory.js";
 import { redactRubyKey } from "../rubycli.js";
 
@@ -103,9 +104,12 @@ export async function runRepl(
         : "normal (prompt for edits)";
   };
 
-  // Compact status header above the prompt, [CC]-style:
-  //   model · context 23% · 31.4k/200k · 87 tok/s · mode
+  // Compact status display, [CC]-style:
+  //   header: model · context 23% · 31.4k/200k · 87 tok/s
+  //   footer: » auto mode · 1 local agent · shift+tab to change
   // Segments without data are dropped; the bar grows as the session runs.
+  // When the pinned footer is active it owns both rows (fixed at the bottom
+  // of the screen); otherwise the header is drawn inline above the prompt.
   const formatCount = (n: number): string =>
     n >= 1_000_000
       ? `${(n / 1_000_000).toFixed(1)}m`
@@ -130,6 +134,10 @@ export async function runRepl(
     if (sessionStatus.tokensPerSecond !== undefined) {
       segs.push(chalk.green(`${sessionStatus.tokensPerSecond.toFixed(0)} tok/s`));
     }
+    return segs.join(chalk.dim(" · "));
+  };
+  const footerBar = (): string => {
+    const segs: string[] = [];
     const mode = agent.getPermissionMode();
     if (mode === "acceptEdits") segs.push(chalk.yellow("accept edits"));
     else if (mode === "plan") segs.push(chalk.cyan("plan mode"));
@@ -141,8 +149,17 @@ export async function runRepl(
         ),
       );
     }
+    segs.push(chalk.dim("shift+tab to change"));
     return segs.join(chalk.dim(" · "));
   };
+
+  // Pin the footer for the whole session (no-op when piped). It stays fixed
+  // at the bottom while streamed output scrolls above it.
+  activateFooter();
+  updateFooter(statusBar(), footerBar());
+  // Release on signal-driven exits too (the normal path releases after the loop).
+  process.once("SIGINT", () => releaseFooter());
+  process.once("SIGTERM", () => releaseFooter());
 
   while (true) {
     const raw = await readLine(history, allCommands, {
@@ -150,6 +167,7 @@ export async function runRepl(
       onCycleMode: cycleMode,
       promptLabel: modeLabel,
       statusBar,
+      footerBar,
     });
 
     // EOF (Ctrl+D)
@@ -433,6 +451,7 @@ export async function runRepl(
   }
 
   await saveHistory(history, cwd);
+  releaseFooter();
   process.stdout.write(chalk.gray("Goodbye.\n"));
 }
 
