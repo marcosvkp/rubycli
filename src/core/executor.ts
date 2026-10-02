@@ -22,12 +22,40 @@ export type ConfirmFn = (
   args: Record<string, unknown>,
 ) => Promise<"allow" | "deny">;
 
+/**
+ * Interactive permission mode, [CC]-style:
+ *  - "normal":      tools prompt per their own requiresConfirmation rules.
+ *  - "acceptEdits": project-local file edits (write/edit/multi_edit) run without
+ *                   prompting. Everything else (bash, MCP, out-of-project writes,
+ *                   the #309 provenance bump, deny patterns) still gates.
+ *  - "plan":        read-only — same as readOnly.
+ */
+export type PermissionMode = "normal" | "acceptEdits" | "plan";
+
+const EDIT_TOOLS = new Set(["write", "edit", "multi_edit"]);
+
+/** True when acceptEdits mode exempts this call from its normal prompt. */
+export function exemptedByAcceptEdits(
+  toolName: string,
+  args: Record<string, unknown>,
+  cwd: string,
+): boolean {
+  if (!EDIT_TOOLS.has(toolName)) return false;
+  // Out-of-project writes keep prompting even in acceptEdits — the mode is a
+  // convenience for editing THIS project, not a blanket write grant.
+  const raw = args.file_path;
+  if (typeof raw !== "string") return false;
+  return !escapesCwdSync(raw, cwd);
+}
+
 export interface ExecutorDeps {
   tools: ToolRegistry;
   skills: SkillRegistry;
   context: ContextManager;
   tmpDir?: string;
   readOnly?: boolean;
+  /** Interactive permission mode. readOnly=true is equivalent to "plan". */
+  permissionMode?: PermissionMode;
   confirmFn?: ConfirmFn;
   /** Returns true when a tool call matches an `ask` permission pattern and must be
    *  confirmed even though the tool's own requiresConfirmation returns false. */
@@ -123,7 +151,8 @@ async function executeOneCall(
   // thinking models require the same signature echoed back on functionResponse.
   const sig = call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {};
 
-  if (deps.readOnly && !tool?.readonly) {
+  const readOnly = deps.readOnly || deps.permissionMode === "plan";
+  if (readOnly && !tool?.readonly) {
     deps.obs?.({ type: "tool_denied", name: call.name, reason: "plan_mode" });
     return {
       type: "function_result",
@@ -134,10 +163,16 @@ async function executeOneCall(
     };
   }
   const args = call.args as Record<string, unknown>;
+  // acceptEdits exempts project-local file edits only — the provenance bump
+  // (untrusted content consumed), ask patterns, and deny rules still gate.
+  const bumped = bumpRequired(call.name, deps.untrustedConsumed === true);
+  const acceptEditsExempt =
+    !bumped &&
+    deps.permissionMode === "acceptEdits" &&
+    exemptedByAcceptEdits(call.name, args, deps.cwd ?? process.cwd());
   const needsConfirm =
-    tool?.requiresConfirmation?.(args) ||
-    deps.forcesConfirmation?.(call.name, args) ||
-    bumpRequired(call.name, deps.untrustedConsumed === true);
+    !acceptEditsExempt &&
+    (tool?.requiresConfirmation?.(args) || deps.forcesConfirmation?.(call.name, args) || bumped);
   if (needsConfirm) {
     const decision = deps.confirmFn ? await deps.confirmFn(call.name, args) : "deny";
     if (decision === "deny") {

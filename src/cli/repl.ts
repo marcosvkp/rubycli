@@ -15,6 +15,7 @@ import { runAgentTurn } from "./runner.js";
 import { runPlanFlow } from "./plan.js";
 import type { SnapshotManager } from "../state/snapshot.js";
 import { fetchRemoteModels, remoteContextWindow, type RemoteModel } from "./models.js";
+import { loadGoal, setGoal, setGoalStatus, clearGoal, noteGoal, type Goal } from "../state/goal.js";
 import { createClient, createCompactionClient } from "../providers/factory.js";
 import { redactRubyKey } from "../rubycli.js";
 
@@ -34,6 +35,8 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: "compact", description: "summarize older conversation history to free context" },
   { name: "context", description: "show current token usage vs. context window" },
   { name: "model", description: "show or switch the session model (lists API models)" },
+  { name: "goal", description: "set, show, pause, resume or clear the session goal" },
+  { name: "auto", description: "toggle auto-mode (keep working without pausing)" },
   { name: "rewind", description: "undo agent file changes since last snapshot" },
   { name: "undo", description: "remove the last user message and agent response from history" },
   { name: "clear", description: "clear conversation history" },
@@ -65,14 +68,45 @@ export async function runRepl(
   agent.setSessionTmpDir(session.tmpDir);
 
   const cwd = process.cwd();
+  let autoMode = false;
+  const existingGoal = await loadGoal(cwd);
+  if (existingGoal && existingGoal.status === "active") {
+    printInfo(`Active goal: ${existingGoal.text} (see /goal, toggle with /auto)\n`);
+  }
   const history = await loadHistory(cwd);
   const skillCommands: SlashCommand[] = skills
     .list()
     .map((s) => ({ name: s.name, description: s.description }));
   const allCommands = [...BUILTIN_COMMANDS, ...skillCommands];
 
+  // Permission mode indicator, cycled with Shift+Tab (normal → acceptEdits → plan).
+  const modeLabel = (): string => {
+    switch (agent.getPermissionMode()) {
+      case "acceptEdits":
+        return chalk.yellow("[accept] ");
+      case "plan":
+        return chalk.cyan("[plan] ");
+      default:
+        return "";
+    }
+  };
+  const cycleMode = (): string => {
+    const order = ["normal", "acceptEdits", "plan"] as const;
+    const next = order[(order.indexOf(agent.getPermissionMode()) + 1) % order.length];
+    agent.setPermissionMode(next);
+    return next === "acceptEdits"
+      ? "accept edits (file edits run without prompting)"
+      : next === "plan"
+        ? "plan (read-only)"
+        : "normal (prompt for edits)";
+  };
+
   while (true) {
-    const raw = await readLine(history, allCommands, { onExit });
+    const raw = await readLine(history, allCommands, {
+      onExit,
+      onCycleMode: cycleMode,
+      promptLabel: modeLabel,
+    });
 
     // EOF (Ctrl+D)
     if (raw === null) break;
@@ -242,6 +276,59 @@ export async function runRepl(
       continue;
     }
 
+    // /goal — persistent session goal. The agent keeps working toward it
+    // across turns; /goal with text sets it, bare /goal shows it.
+    if (input === "/goal" || input.startsWith("/goal ")) {
+      const goalArg = input.slice(5).trim();
+      if (!goalArg) {
+        const existing = await loadGoal(cwd);
+        if (!existing) {
+          printInfo("No goal set. Usage: /goal <what you want to achieve>");
+        } else {
+          printGoal(existing);
+        }
+      } else if (goalArg === "done" || goalArg === "complete") {
+        const g = await setGoalStatus("complete");
+        printInfo(g ? `Goal completed: ${g.text}` : "No goal set.");
+      } else if (goalArg === "pause") {
+        const g = await setGoalStatus("paused");
+        printInfo(g ? "Goal paused." : "No goal set.");
+      } else if (goalArg === "resume") {
+        const g = await setGoalStatus("active");
+        printInfo(g ? `Goal resumed: ${g.text}` : "No goal set.");
+      } else if (goalArg === "clear") {
+        await clearGoal();
+        printInfo("Goal cleared.");
+      } else {
+        const g = await setGoal(goalArg);
+        printInfo(`Goal set: ${g.text}`);
+        printInfo("The agent will keep working toward it until /goal done.");
+      }
+      continue;
+    }
+
+    // /auto — toggle auto-mode: after each turn the agent continues on its
+    // own toward the active goal instead of waiting for the next message.
+    if (input === "/auto" || input.startsWith("/auto ")) {
+      const autoArg = input.slice(5).trim();
+      if (autoArg === "off") {
+        autoMode = false;
+        printInfo("Auto-mode off.");
+      } else if (autoArg === "on" || !autoArg) {
+        const g = await loadGoal(cwd);
+        if (!g || g.status !== "active") {
+          printInfo("Set a goal first: /goal <what you want to achieve>");
+          autoMode = false;
+        } else {
+          autoMode = true;
+          printInfo(`Auto-mode on — working toward: ${g.text}`);
+        }
+      } else {
+        printError("Usage: /auto [on|off]");
+      }
+      continue;
+    }
+
     // Skill invocation: /skill-name [args]
     let userMessage = input;
     if (input.startsWith("/")) {
@@ -264,6 +351,35 @@ export async function runRepl(
 
     void session.log({ type: "user", content: userMessage });
     await runAgentTurn(agent, session, userMessage);
+
+    // Auto-mode: keep going toward the active goal without waiting for input.
+    // Each iteration re-presents the goal with accumulated progress; the loop
+    // stops when the goal is done/paused/cleared, or on turn errors.
+    while (autoMode) {
+      const g = await loadGoal(cwd);
+      if (!g || g.status !== "active") {
+        autoMode = false;
+        printInfo("Auto-mode stopped — no active goal.");
+        break;
+      }
+      const followUp =
+        `Continue working toward the goal: ${g.text}\n` +
+        (g.notes.length > 0 ? `Progress so far:\n- ${g.notes.join("\n- ")}\n` : "") +
+        `If the goal is fully achieved, reply with exactly: GOAL_DONE and nothing else.`;
+      const result = await runAgentTurn(agent, session, followUp);
+      if (/^\s*GOAL_DONE\b/.test(result)) {
+        await setGoalStatus("complete");
+        autoMode = false;
+        printInfo(`Goal completed: ${g.text}`);
+        break;
+      }
+      if (/maximum iterations|identical tool calls/i.test(result)) {
+        autoMode = false;
+        printInfo("Auto-mode stopped — the last turn hit a guard. Review and resume with /auto.");
+        break;
+      }
+      await noteGoal(result.slice(0, 500));
+    }
   }
 
   await saveHistory(history, cwd);
@@ -364,6 +480,23 @@ function formatModelEntry(m: RemoteModel): string {
   const label =
     ctx >= 1_000_000 ? `${(ctx / 1_000_000).toFixed(0)}M` : `${Math.round(ctx / 1000)}k`;
   return `${m.id} ${chalk.dim(`(${label} ctx)`)}`;
+}
+
+/** One-line summary of a goal for the REPL. */
+function printGoal(g: Goal): void {
+  const status =
+    g.status === "active"
+      ? chalk.green("active")
+      : g.status === "paused"
+        ? chalk.yellow("paused")
+        : chalk.dim("complete");
+  process.stderr.write(`${chalk.bold("Goal")} [${status}]: ${g.text}\n`);
+  if (g.notes.length > 0) {
+    process.stderr.write(chalk.dim(`  notes: ${g.notes.length}\n`));
+  }
+  process.stderr.write(
+    chalk.dim("  /goal <text> set · /goal done|pause|resume|clear · /auto to keep working\n"),
+  );
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

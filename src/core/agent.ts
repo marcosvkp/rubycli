@@ -3,7 +3,7 @@ import type { ToolRegistry } from "../tools/registry.js";
 import type { SkillRegistry } from "../skills/registry.js";
 import { toolToDefinition, activateSkillDefinition } from "../providers/schema.js";
 import { ContextManager } from "./context.js";
-import { executeCalls } from "./executor.js";
+import { executeCalls, type PermissionMode } from "./executor.js";
 import type { ConfirmFn } from "./executor.js";
 import { buildReminder, buildPlanSuffix, buildPeriodicReminder } from "./prompt.js";
 import type { FunctionCallPart, Message } from "../providers/types.js";
@@ -54,6 +54,7 @@ export type AgentRunMode = "react" | "plan";
 
 export class Agent {
   private context: ContextManager;
+  private permissionMode: PermissionMode = "normal";
   private confirmFn?: ConfirmFn;
   private forcesConfirmationFn?: (toolName: string, args: Record<string, unknown>) => boolean;
   private model: string;
@@ -129,6 +130,14 @@ export class Agent {
 
   getModel(): string {
     return this.model;
+  }
+
+  getPermissionMode(): PermissionMode {
+    return this.permissionMode;
+  }
+
+  setPermissionMode(mode: PermissionMode): void {
+    this.permissionMode = mode;
   }
 
   /**
@@ -339,6 +348,7 @@ export class Agent {
         context: this.context,
         tmpDir: this.context.getSessionTmpDir(),
         readOnly: mode === "plan",
+        permissionMode: this.permissionMode,
         confirmFn: this.confirmFn,
         forcesConfirmation: this.forcesConfirmationFn,
         obs: this.obs,

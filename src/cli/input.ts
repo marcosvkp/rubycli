@@ -283,6 +283,14 @@ export async function selectKey(prompt: string, options: SelectOption[]): Promis
 export interface ReadLineOpts {
   /** Called instead of process.exit(0) when Ctrl+C is pressed. Useful for async cleanup. */
   onExit?: () => Promise<void>;
+  /**
+   * Called when the user presses Shift+Tab. The REPL uses it to cycle
+   * permission modes (normal → acceptEdits → plan) without submitting input.
+   * Returns the label to display (e.g. "accept edits").
+   */
+  onCycleMode?: () => string;
+  /** Current mode label shown in the prompt (e.g. "> ", "[accept] > "). */
+  promptLabel?: () => string;
 }
 
 /**
@@ -306,6 +314,9 @@ export async function readLine(
     let histIdx = -1; // -1 = live input; ≥0 = browsing history
     let savedInput = ""; // snapshot of live input while browsing history
     let selectedIdx = -1; // popup selection; -1 = none
+    // Transient one-render notice (e.g. permission-mode change), drawn as an
+    // extra dim line under the input and cleared on the next render.
+    let flash = "";
     // How many rows BELOW the top of the render area the cursor was left at
     // the end of the previous render(). Used to back up to the top before
     // re-rendering. 0 means cursor is already on the prompt (top) line.
@@ -327,20 +338,23 @@ export async function readLine(
 
       // Draw prompt + each input line. PROMPT for the first line, CONT_PROMPT
       // for continuations so the user can see which lines are extensions.
+      // The REPL may prefix the prompt with the permission mode (accept/plan).
+      const promptPrefix = opts?.promptLabel?.() ?? "";
       for (let i = 0; i < lines.length; i++) {
         if (i > 0) out += "\n";
-        out += (i === 0 ? PROMPT : CONT_PROMPT) + lines[i];
+        out += (i === 0 ? promptPrefix + PROMPT : CONT_PROMPT) + lines[i];
       }
 
       // Popup below the (last) input line
       out += renderPopup(matches, selectedIdx);
+      if (flash) out += `\n${chalk.dim(flash)}`;
 
       // Position the cursor at (cursorLine, cursorCol) within the input area.
       // After the writes above, the cursor is at the bottom-right of the
       // popup (or at the end of the last input line if no popup). Move it
       // up to the target line.
       const { line: cursorLine, col: cursorCol } = cursorLineCol(input, cursorPos);
-      const lastDrawnRow = lines.length - 1 + matches.length;
+      const lastDrawnRow = lines.length - 1 + matches.length + (flash ? 1 : 0);
       const upBy = lastDrawnRow - cursorLine;
       if (upBy > 0) out += A.up(upBy);
 
@@ -375,7 +389,7 @@ export async function readLine(
     // ── keypress handler ─────────────────────────────────────────────────────
     const onKey = (
       _str: string,
-      key: { name: string; ctrl: boolean; meta: boolean; sequence: string },
+      key: { name: string; ctrl: boolean; meta: boolean; shift?: boolean; sequence: string },
     ) => {
       if (!key) return;
 
@@ -422,6 +436,19 @@ export async function readLine(
           return;
         }
         done(input);
+        return;
+      }
+
+      // Shift+Tab → cycle permission mode (handled by REPL, input untouched).
+      // Terminals report it as Tab with shift=true (or "\x1b[Z" escape).
+      if ((key.name === "tab" && key.shift) || key.sequence === "[Z") {
+        if (opts?.onCycleMode) {
+          const label = opts.onCycleMode();
+          flash = `mode: ${label}`;
+          render();
+          flash = "";
+          render();
+        }
         return;
       }
 
