@@ -16,6 +16,7 @@ import { runPlanFlow } from "./plan.js";
 import type { SnapshotManager } from "../state/snapshot.js";
 import { fetchRemoteModels, remoteContextWindow, type RemoteModel } from "./models.js";
 import { loadGoal, setGoal, setGoalStatus, clearGoal, noteGoal, type Goal } from "../state/goal.js";
+import { sessionStatus } from "./status-state.js";
 import { createClient, createCompactionClient } from "../providers/factory.js";
 import { redactRubyKey } from "../rubycli.js";
 
@@ -69,6 +70,7 @@ export async function runRepl(
 
   const cwd = process.cwd();
   let autoMode = false;
+  sessionStatus.autoMode = false;
   const existingGoal = await loadGoal(cwd);
   if (existingGoal && existingGoal.status === "active") {
     printInfo(`Active goal: ${existingGoal.text} (see /goal, toggle with /auto)\n`);
@@ -101,11 +103,53 @@ export async function runRepl(
         : "normal (prompt for edits)";
   };
 
+  // Compact status header above the prompt, [CC]-style:
+  //   model · context 23% · 31.4k/200k · 87 tok/s · mode
+  // Segments without data are dropped; the bar grows as the session runs.
+  const formatCount = (n: number): string =>
+    n >= 1_000_000
+      ? `${(n / 1_000_000).toFixed(1)}m`
+      : n >= 1000
+        ? `${(n / 1000).toFixed(1)}k`
+        : `${n}`;
+  const statusBar = (): string => {
+    const segs: string[] = [];
+    const stats = agent.getContextStats();
+    const model = sessionStatus.model || agent.getModel();
+    if (model) segs.push(chalk.magentaBright(model));
+    const window = sessionStatus.contextWindow ?? stats.contextWindow;
+    const used = sessionStatus.contextUsed ?? stats.estimatedTokens;
+    if (window > 0) {
+      const pct = Math.min(100, Math.round((used / window) * 100));
+      segs.push(
+        chalk.dim("context ") +
+          chalk.yellow(`${pct}%`) +
+          chalk.dim(` · ${formatCount(used)} / ${formatCount(window)}`),
+      );
+    }
+    if (sessionStatus.tokensPerSecond !== undefined) {
+      segs.push(chalk.green(`${sessionStatus.tokensPerSecond.toFixed(0)} tok/s`));
+    }
+    const mode = agent.getPermissionMode();
+    if (mode === "acceptEdits") segs.push(chalk.yellow("accept edits"));
+    else if (mode === "plan") segs.push(chalk.cyan("plan mode"));
+    if (sessionStatus.autoMode) segs.push(chalk.yellow("» auto mode"));
+    if (sessionStatus.activeAgents > 0) {
+      segs.push(
+        chalk.cyan(
+          `${sessionStatus.activeAgents} local agent${sessionStatus.activeAgents === 1 ? "" : "s"}`,
+        ),
+      );
+    }
+    return segs.join(chalk.dim(" · "));
+  };
+
   while (true) {
     const raw = await readLine(history, allCommands, {
       onExit,
       onCycleMode: cycleMode,
       promptLabel: modeLabel,
+      statusBar,
     });
 
     // EOF (Ctrl+D)
@@ -313,14 +357,17 @@ export async function runRepl(
       const autoArg = input.slice(5).trim();
       if (autoArg === "off") {
         autoMode = false;
+        sessionStatus.autoMode = false;
         printInfo("Auto-mode off.");
       } else if (autoArg === "on" || !autoArg) {
         const g = await loadGoal(cwd);
         if (!g || g.status !== "active") {
           printInfo("Set a goal first: /goal <what you want to achieve>");
           autoMode = false;
+          sessionStatus.autoMode = false;
         } else {
           autoMode = true;
+          sessionStatus.autoMode = true;
           printInfo(`Auto-mode on — working toward: ${g.text}`);
         }
       } else {
@@ -359,6 +406,7 @@ export async function runRepl(
       const g = await loadGoal(cwd);
       if (!g || g.status !== "active") {
         autoMode = false;
+        sessionStatus.autoMode = false;
         printInfo("Auto-mode stopped — no active goal.");
         break;
       }
@@ -370,11 +418,13 @@ export async function runRepl(
       if (/^\s*GOAL_DONE\b/.test(result)) {
         await setGoalStatus("complete");
         autoMode = false;
+        sessionStatus.autoMode = false;
         printInfo(`Goal completed: ${g.text}`);
         break;
       }
       if (/maximum iterations|identical tool calls/i.test(result)) {
         autoMode = false;
+        sessionStatus.autoMode = false;
         printInfo("Auto-mode stopped — the last turn hit a guard. Review and resume with /auto.");
         break;
       }

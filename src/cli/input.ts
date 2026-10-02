@@ -291,6 +291,11 @@ export interface ReadLineOpts {
   onCycleMode?: () => string;
   /** Current mode label shown in the prompt (e.g. "> ", "[accept] > "). */
   promptLabel?: () => string;
+  /**
+   * Status segments drawn above the prompt each render (model, context,
+   * tok/s, mode…). Returned fresh on every render so values stay live.
+   */
+  statusBar?: () => string;
 }
 
 /**
@@ -336,6 +341,10 @@ export async function readLine(
 
       let out = A.up(cursorRowsBelowTop) + A.clearLine + A.clearDown;
 
+      // Status header (model · context · tok/s · mode), re-evaluated each render.
+      const status = opts?.statusBar?.();
+      if (status) out += status + "\n\n";
+
       // Draw prompt + each input line. PROMPT for the first line, CONT_PROMPT
       // for continuations so the user can see which lines are extensions.
       // The REPL may prefix the prompt with the permission mode (accept/plan).
@@ -361,7 +370,9 @@ export async function readLine(
       const promptLen = cursorLine === 0 ? PROMPT_STR.length : CONT_PROMPT_STR.length;
       out += "\r" + A.right(promptLen + cursorCol);
 
-      cursorRowsBelowTop = cursorLine;
+      // Header rows (status + blank) are part of the render area we must
+      // travel back over on the next render.
+      cursorRowsBelowTop = cursorLine + (status ? 2 : 0);
       stdout.write(out);
     };
 

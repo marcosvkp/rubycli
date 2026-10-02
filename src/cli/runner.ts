@@ -14,6 +14,7 @@ import {
   printError,
   printInfo,
 } from "./renderer.js";
+import { sessionStatus } from "./status-state.js";
 
 export async function runAgentTurn(
   agent: Agent,
@@ -157,6 +158,12 @@ export async function runAgentTurn(
               contextWindow: agentWindow,
             });
             process.stdout.write(`\n${chalk.dim(line)}\n`);
+            // Feed the REPL status header with this turn's numbers.
+            sessionStatus.model = model;
+            sessionStatus.contextUsed = turnInput + turnOutput;
+            sessionStatus.contextWindow = agentWindow;
+            sessionStatus.tokensPerSecond = tps;
+            sessionStatus.ttftMs = turnFirstTtft;
             // Reset per-turn accumulators (a single runAgentTurn may yield multiple dones).
             turnInput = 0;
             turnOutput = 0;

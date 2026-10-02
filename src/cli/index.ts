@@ -15,6 +15,7 @@ import { loadConfig, saveConfig, AGENT_DIR } from "../state/config.js";
 import { Session } from "../state/session.js";
 import { loadSystemInstruction } from "../core/prompt.js";
 import { resolveApiKey } from "./keys.js";
+import { sessionStatus } from "./status-state.js";
 import { runRepl } from "./repl.js";
 import { createConfirmFn, createAutoApproveConfirmFn } from "./confirm.js";
 import { printError, printInfo } from "./renderer.js";
@@ -461,6 +462,7 @@ async function createAgent(
     process.env[BASE_URL_ENV] ?? baseUrlOverride ?? config.baseUrl ?? DEFAULT_BASE_URL;
   const debugOn = debug ?? process.env[DEBUG_ENV] === "1";
   const apiKey = await resolveRubyApiKey(config, provider);
+  sessionStatus.model = model;
   // Fixes #251: config.temperature was previously ignored unless --temperature was passed.
   const effectiveTemperature = temperature ?? config.temperature;
   if (debugOn) {
@@ -480,6 +482,14 @@ async function createAgent(
   // fresh context, read-only tools, and no `task` of its own (depth 1, no
   // recursion). Shares the parent's provider/model/key/baseUrl.
   const spawnSubAgent = async (prompt: string, opts: { maxTurns: number }): Promise<string> => {
+    sessionStatus.activeAgents++;
+    try {
+      return await spawnExploreAgent(prompt, opts);
+    } finally {
+      sessionStatus.activeAgents--;
+    }
+  };
+  const spawnExploreAgent = async (prompt: string, opts: { maxTurns: number }): Promise<string> => {
     const full = createDefaultRegistry(model, runner);
     // The child is explore-only: keep read-only tools, drop writes, bash,
     // MCP, and `task` itself (no nested delegation).
