@@ -63,6 +63,8 @@ export function createClient(
     provider?: Provider;
     baseUrl?: string;
     temperature?: number;
+    /** Reasoning effort for reasoning models ("low" | "medium" | "high"). */
+    reasoningEffort?: "low" | "medium" | "high";
     /** Non-fatal diagnostics sink, injected by the CLI. */
     onWarn?: (message: string) => void;
   },
@@ -96,6 +98,7 @@ export function createClient(
       includeUsage: options?.includeUsage,
       maxTokens: options?.maxTokens,
       temperature: options?.temperature,
+      reasoningEffort: options?.reasoningEffort,
       baseUrl,
       salvage: preset?.salvageToolCalls ?? false,
       providerLabel: errorLabel,

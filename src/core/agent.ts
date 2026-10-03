@@ -11,6 +11,7 @@ import type { ObservabilityHandler } from "./observability.js";
 import type { SnapshotManager } from "../state/snapshot.js";
 import { compactHistory, contextWindowFor, COMPACTION_TARGET_TOKENS } from "./compact.js";
 import type { CompactResult } from "./compact.js";
+import { hasNativeThinking } from "../providers/factory.js";
 
 export type AgentEvent =
   | { type: "text"; text: string }
@@ -55,6 +56,7 @@ export type AgentRunMode = "react" | "plan";
 export class Agent {
   private context: ContextManager;
   private permissionMode: PermissionMode = "normal";
+  private reasoningEffort: "low" | "medium" | "high" | undefined;
   private confirmFn?: ConfirmFn;
   private forcesConfirmationFn?: (toolName: string, args: Record<string, unknown>) => boolean;
   private model: string;
@@ -134,6 +136,34 @@ export class Agent {
 
   getPermissionMode(): PermissionMode {
     return this.permissionMode;
+  }
+
+  /** Current reasoning effort, when one has been set this session. */
+  getReasoningEffort(): "low" | "medium" | "high" | undefined {
+    return this.reasoningEffort;
+  }
+
+  /**
+   * Set reasoning effort ("low" | "medium" | "high"). Rebuilds the LLM client
+   * (and compaction client) with the same model/connection so the next stream
+   * carries reasoning_effort. No-op for non-[OI]-wire providers, which the CLI
+   * guards anyway.
+   */
+  setReasoningEffort(
+    effort: "low" | "medium" | "high",
+    buildClient: (model: string, effort: "low" | "medium" | "high") => LLMClient,
+    buildCompactionClient?: (model: string, effort: "low" | "medium" | "high") => LLMClient,
+  ): void {
+    this.reasoningEffort = effort;
+    this.client = buildClient(this.model, effort);
+    if (buildCompactionClient) {
+      this.compactionClient = buildCompactionClient(this.model, effort);
+    }
+  }
+
+  /** True when the session model accepts reasoning_effort (hasNativeThinking). */
+  supportsReasoningEffort(): boolean {
+    return hasNativeThinking(this.model);
   }
 
   setPermissionMode(mode: PermissionMode): void {

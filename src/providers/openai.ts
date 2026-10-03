@@ -22,7 +22,9 @@ const MAX_SALVAGE_BUFFER = 32_768;
 
 // o1/o3/o4 reasoning models use "developer" role instead of "system"
 function isReasoningModel(model: string): boolean {
-  return /^o[134](-|$)/.test(model);
+  // [OI] o-series plus any *thinking* variant (RubyCLI Cloud / Gemini style),
+  // matching hasNativeThinking detection so /effort works end to end.
+  return /^o[134](-|$)/.test(model) || /thinking/i.test(model);
 }
 
 /**
@@ -62,6 +64,8 @@ export class OpenAIClient implements LLMClient {
   private includeUsage: boolean;
   private maxTokens: number;
   private temperature: number | undefined;
+  /** Reasoning effort for reasoning models: "low" | "medium" | "high". */
+  private reasoningEffort: "low" | "medium" | "high" | undefined;
   private salvage: boolean;
   private providerLabel: string;
   private keyHint?: string;
@@ -77,6 +81,9 @@ export class OpenAIClient implements LLMClient {
       temperature?: number;
       /** Recover tool calls emitted as plain text. Enabled for OSS/local presets. */
       salvage?: boolean;
+      /** Reasoning effort for reasoning models ("low" | "medium" | "high").
+       *  Sent as reasoning_effort; ignored by non-reasoning models. */
+      reasoningEffort?: "low" | "medium" | "high";
       /** Human label used in friendly error messages (defaults to "[OI]"). */
       providerLabel?: string;
       /** Remediation hint for 401 errors, composed by the CLI layer. */
@@ -92,6 +99,7 @@ export class OpenAIClient implements LLMClient {
     this.maxTokens = options?.maxTokens ?? DEFAULT_MAX_TOKENS;
     this.temperature = options?.temperature;
     this.salvage = options?.salvage ?? false;
+    this.reasoningEffort = options?.reasoningEffort;
     this.providerLabel = options?.providerLabel ?? "[OI]";
     this.keyHint = options?.keyHint;
     this.onWarn = options?.onWarn;
@@ -105,6 +113,8 @@ export class OpenAIClient implements LLMClient {
     const reasoning = isReasoningModel(this.model);
     const openaiMessages = messagesToOpenAIParams(messages, systemInstruction, reasoning);
     const openaiTools: OpenAI.ChatCompletionFunctionTool[] = tools.map(definitionToOpenAITool);
+    // Only reasoning models accept reasoning_effort; sending it to others 400s.
+    const effort = reasoning ? this.reasoningEffort : undefined;
 
     try {
       yield* withRetry(
@@ -113,6 +123,7 @@ export class OpenAIClient implements LLMClient {
             openaiMessages,
             openaiTools,
             tools.map((t) => t.name),
+            effort,
           ),
         (err) => {
           const msg = err.message;
@@ -134,6 +145,7 @@ export class OpenAIClient implements LLMClient {
     openaiMessages: OpenAI.ChatCompletionMessageParam[],
     openaiTools: OpenAI.ChatCompletionFunctionTool[],
     toolNames: string[],
+    effort: "low" | "medium" | "high" | undefined,
   ): AsyncGenerator<StreamEvent> {
     const apiStream = await this.client.chat.completions.create({
       model: this.model,
@@ -143,6 +155,7 @@ export class OpenAIClient implements LLMClient {
       stream: true,
       stream_options: this.includeUsage ? { include_usage: true } : undefined,
       ...(this.temperature !== undefined ? { temperature: this.temperature } : {}),
+      ...(effort !== undefined ? { reasoning_effort: effort } : {}),
     });
 
     const pendingCalls = new Map<number, { id: string; name: string; args: string }>();

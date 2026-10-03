@@ -37,6 +37,7 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: "compact", description: "summarize older conversation history to free context" },
   { name: "context", description: "show current token usage vs. context window" },
   { name: "model", description: "show or switch the session model (lists API models)" },
+  { name: "effort", description: "show or set reasoning effort: low | medium | high" },
   { name: "goal", description: "set, show, pause, resume or clear the session goal" },
   { name: "auto", description: "toggle auto-mode (keep working without pausing)" },
   { name: "rewind", description: "undo agent file changes since last snapshot" },
@@ -334,6 +335,49 @@ export async function runRepl(
         }
       } else {
         printError(`Unknown /mcp subcommand. Use /mcp or /mcp test <name>.`);
+      }
+      continue;
+    }
+
+    // /effort — reasoning effort for reasoning-capable models.
+    // Bare "/effort" shows the current value; "/effort low|medium|high" sets it.
+    if (input === "/effort" || input.startsWith("/effort ")) {
+      const arg = input.slice(7).trim().toLowerCase();
+      if (!arg) {
+        const current = agent.getReasoningEffort();
+        if (!agent.supportsReasoningEffort()) {
+          printInfo(
+            `Current model (${agent.getModel()}) has no reasoning controls — /effort has no effect.`,
+          );
+        } else {
+          printInfo(
+            `Reasoning effort: ${current ?? "default (medium)"} — set with /effort low|medium|high`,
+          );
+        }
+      } else if (arg !== "low" && arg !== "medium" && arg !== "high") {
+        printError("Usage: /effort low|medium|high");
+      } else if (!agent.supportsReasoningEffort()) {
+        printError(
+          `Model '${agent.getModel()}' has no reasoning controls. Switch to a reasoning model first.`,
+        );
+      } else {
+        agent.setReasoningEffort(
+          arg,
+          (model, effort) =>
+            createClient(model, connection?.apiKey ?? "", {
+              includeUsage: true,
+              provider: connection?.provider ?? "rubycli",
+              baseUrl: connection?.baseUrl,
+              temperature: connection?.temperature,
+              reasoningEffort: effort,
+            }),
+          (model, effort) =>
+            createCompactionClient(model, connection?.apiKey ?? "", {
+              provider: connection?.provider ?? "rubycli",
+              baseUrl: connection?.baseUrl,
+            }),
+        );
+        printInfo(`Reasoning effort set to ${arg} (session only).`);
       }
       continue;
     }
