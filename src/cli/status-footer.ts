@@ -1,4 +1,4 @@
-import { stdout, env } from "node:process";
+import { stdout, stdin, env } from "node:process";
 import { stripVTControlCharacters } from "node:util";
 
 /**
@@ -9,10 +9,12 @@ import { stripVTControlCharacters } from "node:util";
  * *above* the footer and the status line stays visually fixed. The footer is
  * redrawn in place on every `update()` without disturbing scrollback.
  *
- * Non-TTY output is a no-op (piped runs keep plain streaming). When the
- * terminal size is unavailable (Windows ConPTY doesn't report rows/cols on
- * process.stdout), fall back to sensible defaults if the env suggests an
- * interactive terminal window.
+ * Gating note: we can't trust `stdout.isTTY` alone — under Windows ConPTY
+ * (PowerShell/cmd/Windows Terminal, especially via npx shims) it is frequently
+ * `undefined` even in a real interactive window. The REPL only runs
+ * interactively when `stdin.isTTY`, so that is the primary signal; on win32
+ * we then assume stdout reaches the same console (ANSI writes are wrapped in
+ * try/catch so a genuinely non-console stdout degrades to plain streaming).
  */
 
 const FOOTER_ROWS = 2; // status line + mode line
@@ -21,10 +23,14 @@ let active = false;
 let lastStatus = "";
 let lastMode = "";
 
+/** Interactive session with a console-style stdout we can draw on. */
+function canDraw(): boolean {
+  if (!stdin.isTTY) return false;
+  return stdout.isTTY === true || process.platform === "win32";
+}
+
 function termSize(): { cols: number; rows: number } | null {
-  if (!stdout.isTTY) return null;
-  // Windows ConPTY often leaves stdout.rows/columns undefined even in a real
-  // interactive window; use env hints before giving up.
+  if (!canDraw()) return null;
   let cols = stdout.columns ?? 0;
   let rows = stdout.rows ?? 0;
   if ((!cols || !rows) && env.TERM_PROGRAM === "vscode") {
@@ -32,10 +38,10 @@ function termSize(): { cols: number; rows: number } | null {
     rows = rows || 30;
   }
   if (!cols || !rows) {
-    // Last resort for interactive Windows terminals (ConPTY): 80x24 is the
-    // safe floor — footer rows are re-resolved on resize via render checks.
-    cols = 80;
-    rows = 24;
+    // Windows ConPTY frequently leaves rows/columns undefined even in a real
+    // interactive window: default to 80x24 and re-resolve on resize.
+    cols = cols || 80;
+    rows = rows || 24;
   }
   if (cols < 20 || rows < FOOTER_ROWS + 3) return null;
   return { cols, rows };
@@ -58,14 +64,19 @@ function draw(status: string, mode: string): void {
   if (!size) return;
   const { cols, rows } = size;
   // Save cursor, jump to footer rows, draw, restore.
-  stdout.write(
-    "\x1b[s" +
-      `\x1b[${rows - 1};1H` +
-      fitLine(status, cols) +
-      `\x1b[${rows};1H` +
-      fitLine(mode, cols) +
-      "\x1b[u",
-  );
+  try {
+    stdout.write(
+      "\x1b[s" +
+        `\x1b[${rows - 1};1H` +
+        fitLine(status, cols) +
+        `\x1b[${rows};1H` +
+        fitLine(mode, cols) +
+        "\x1b[u",
+    );
+  } catch {
+    // Terminal rejected the ANSI sequence — degrade to plain streaming.
+    active = false;
+  }
   lastStatus = status;
   lastMode = mode;
 }
@@ -77,10 +88,14 @@ function draw(status: string, mode: string): void {
 export function activateFooter(): void {
   if (active || !termSize()) return;
   const { rows } = termSize()!;
+  try {
+    // Set scroll region to everything above the footer, then park the cursor
+    // at the last scroll row so output starts above the footer.
+    stdout.write(`\x1b[1;${rows - FOOTER_ROWS}r` + `\x1b[${rows - FOOTER_ROWS};1H`);
+  } catch {
+    return; // can't control this terminal — leave scrolling untouched
+  }
   active = true;
-  // Set scroll region to everything above the footer, then park the cursor
-  // at the last scroll row so output starts above the footer.
-  stdout.write(`\x1b[1;${rows - FOOTER_ROWS}r` + `\x1b[${rows - FOOTER_ROWS};1H`);
   draw("", "");
 }
 
@@ -89,15 +104,19 @@ export function releaseFooter(): void {
   if (!active) return;
   active = false;
   const size = termSize();
-  stdout.write("\x1b[r"); // reset scroll region to full screen
-  if (size) {
-    stdout.write(
-      `\x1b[${size.rows - 1};1H` +
-        " ".repeat(size.cols) +
-        `\x1b[${size.rows};1H` +
-        " ".repeat(size.cols) +
-        `\x1b[${size.rows - FOOTER_ROWS};1H`,
-    );
+  try {
+    stdout.write("\x1b[r"); // reset scroll region to full screen
+    if (size) {
+      stdout.write(
+        `\x1b[${size.rows - 1};1H` +
+          " ".repeat(size.cols) +
+          `\x1b[${size.rows};1H` +
+          " ".repeat(size.cols) +
+          `\x1b[${size.rows - FOOTER_ROWS};1H`,
+      );
+    }
+  } catch {
+    // Ignore — nothing more we can do on the way out.
   }
   lastStatus = "";
   lastMode = "";
