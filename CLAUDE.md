@@ -44,6 +44,12 @@ src/
     mentions.ts     # @-mention expansion — resolves @file references before the agent sees them
     plan.ts         # /plan slash command handler — plan pass → approval → react execution
     runner.ts       # runAgentTurn() helper extracted from repl.ts
+    models.ts       # GET /models client — used by /model and live context-window lookup
+    context-window.ts # resolves the model context window (config → registry → API)
+    project-doc.ts  # discovers AGENTS.md / RUBYCLI.md / CLAUDE.md for the system prompt
+    git-info.ts     # read-only git queries (branch, diff) powering /diff and /status
+    status-state.ts # session status shared by runner (metrics) and REPL (status bar, /cost)
+    status-footer.ts# pinned footer via the terminal scroll region
   core/           # Pure library — no process.env reads, no CLI/state imports
     agent.ts        # Agentic loop: stream → collect function calls → execute → feed back
     executor.ts     # Parallel tool execution, skill activation dispatch, HITL confirmation gate,

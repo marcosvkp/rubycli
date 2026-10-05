@@ -11,6 +11,8 @@ import {
   PERIODIC_REMINDER_INTERVAL,
   renderSystemInstruction,
   buildPlanSuffix,
+  PROJECT_DOC_MAX_CHARS,
+  type ProjectDoc,
 } from "./prompt.js";
 
 afterEach(() => {
@@ -276,5 +278,62 @@ describe("buildPlanSuffix", () => {
   it("reflects new tools added to the set without code changes", () => {
     const suffix = buildPlanSuffix(new Set(["read", "new_tool"]));
     expect(suffix).toContain("`new_tool`");
+  });
+});
+
+describe("loadSystemInstruction with a project doc", () => {
+  const doc: ProjectDoc = {
+    name: "AGENTS.md",
+    path: "/repo/AGENTS.md",
+    content: "Use pnpm. Tests live next to source.",
+  };
+
+  it("appends the project guide to the default instruction", async () => {
+    delete process.env.RUBYCLI_SYSTEM_MD;
+    const result = await loadSystemInstruction(doc);
+    expect(result).toContain("Use pnpm.");
+    expect(result).toContain("## Project instructions (AGENTS.md)");
+    expect(result.startsWith(DEFAULT_SYSTEM_INSTRUCTION)).toBe(true);
+  });
+
+  it("keeps the safety footer last, after repository content", async () => {
+    delete process.env.RUBYCLI_SYSTEM_MD;
+    const result = await loadSystemInstruction(doc);
+    // A cloned repo's guide is untrusted: the invariants must not be overridable
+    // by trailing repo text, so the footer follows it.
+    expect(result.lastIndexOf("Safety invariants")).toBeGreaterThan(result.indexOf("Use pnpm."));
+  });
+
+  it("frames the project doc as data, not instructions", async () => {
+    delete process.env.RUBYCLI_SYSTEM_MD;
+    const result = await loadSystemInstruction(doc);
+    expect(result).toContain("<project-instructions");
+    expect(result).toMatch(/cannot override/i);
+  });
+
+  it("truncates an oversized guide", async () => {
+    delete process.env.RUBYCLI_SYSTEM_MD;
+    const huge: ProjectDoc = { ...doc, content: "x".repeat(PROJECT_DOC_MAX_CHARS + 500) };
+    const result = await loadSystemInstruction(huge);
+    expect(result).toContain("[...truncated]");
+    expect(result.length).toBeLessThan(
+      PROJECT_DOC_MAX_CHARS + DEFAULT_SYSTEM_INSTRUCTION.length + 3000,
+    );
+  });
+
+  it("still appends the footer when a custom instruction is in use", async () => {
+    const path = join(tmpdir(), `prompt-doc-test-${Date.now()}.md`);
+    await writeFile(path, "Custom prompt.");
+    process.env.RUBYCLI_SYSTEM_MD = path;
+    const result = await loadSystemInstruction(doc);
+    expect(result).toContain("Custom prompt.");
+    expect(result).toContain("Use pnpm.");
+    expect(result.indexOf("Use pnpm.")).toBeLessThan(result.lastIndexOf("Safety invariants"));
+    await rm(path, { force: true });
+  });
+
+  it("returns the bare default when no doc is supplied", async () => {
+    delete process.env.RUBYCLI_SYSTEM_MD;
+    expect(await loadSystemInstruction(null)).toBe(DEFAULT_SYSTEM_INSTRUCTION);
   });
 });

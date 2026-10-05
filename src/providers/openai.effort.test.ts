@@ -61,12 +61,12 @@ function makeClient(model: string, effort?: "low" | "medium" | "high"): OpenAICl
 }
 
 async function collect(client: OpenAIClient): Promise<void> {
-  for await (const _ of client.stream(
+  for await (const event of client.stream(
     [{ role: "user", parts: [{ type: "text", text: "hi" }] }],
     "sys",
     [],
   )) {
-    // drain
+    void event; // drain — the request body is what this test inspects
   }
 }
 

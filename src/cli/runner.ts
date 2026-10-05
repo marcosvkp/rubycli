@@ -36,9 +36,11 @@ export async function runAgentTurn(
   let turnFirstTtft: number | undefined;
   let turnFirstTokenAt: number | undefined;
   let turnLastEndAt: number | undefined;
+  let turnCalls = 0;
   const turnStartAt = Date.now();
   agent.setMetricsSink?.({
     onCallEnd: (e) => {
+      turnCalls++;
       turnInput += e.inputTokens;
       turnOutput += e.outputTokens;
       if (e.cachedTokens !== undefined) turnCached = (turnCached ?? 0) + e.cachedTokens;
@@ -164,6 +166,12 @@ export async function runAgentTurn(
             sessionStatus.contextWindow = agentWindow;
             sessionStatus.tokensPerSecond = tps;
             sessionStatus.ttftMs = turnFirstTtft;
+            // Session-cumulative totals for /cost.
+            sessionStatus.calls += turnCalls;
+            sessionStatus.totalInputTokens += turnInput;
+            sessionStatus.totalOutputTokens += turnOutput;
+            sessionStatus.totalCachedTokens += turnCached ?? 0;
+            sessionStatus.totalReasoningTokens += turnReasoning ?? 0;
             // Reset per-turn accumulators (a single runAgentTurn may yield multiple dones).
             turnInput = 0;
             turnOutput = 0;
@@ -172,6 +180,7 @@ export async function runAgentTurn(
             turnFirstTtft = undefined;
             turnFirstTokenAt = undefined;
             turnLastEndAt = undefined;
+            turnCalls = 0;
           }
           break;
         }

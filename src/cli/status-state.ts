@@ -17,10 +17,23 @@ export interface SessionStatus {
   autoMode: boolean;
   /** Last turn's TTFT in ms. */
   ttftMs?: number;
+
+  // Session-cumulative counters, fed per LLM call by the runner (/cost).
+  /** Number of LLM calls made this session. */
+  calls: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCachedTokens: number;
+  totalReasoningTokens: number;
 }
 
 export const sessionStatus: SessionStatus = {
   model: "",
   activeAgents: 0,
   autoMode: false,
+  calls: 0,
+  totalInputTokens: 0,
+  totalOutputTokens: 0,
+  totalCachedTokens: 0,
+  totalReasoningTokens: 0,
 };

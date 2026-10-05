@@ -85,8 +85,33 @@ Manage or rotate the key any time with `ruby config --api-key <new-key>`.
 | `ruby model [model]` | Show or set the default model             |
 | `ruby mcp ...`       | Manage MCP servers (`list`, `add`, ...)   |
 
-Inside the interactive session, type `/help` for slash commands
-(`/model`, `/config`, `/compact`, `/plan`, ...).
+### In-session commands
+
+Type `/help` inside a session for the live list.
+
+| Slash command | What it does                                                  |
+| ------------- | ------------------------------------------------------------- |
+| `/init`       | Create or update the project guide (`AGENTS.md`)              |
+| `/status`     | Connection, model, key source, permissions, project guide     |
+| `/model`      | List API models / switch the session model                    |
+| `/effort`     | Show or set reasoning effort (`low`/`medium`/`high`)          |
+| `/cost`       | Token totals for this session                                 |
+| `/diff`       | Uncommitted changes (`/diff full` for the patch)              |
+| `/context`    | Token usage vs. context window                                |
+| `/compact`    | Summarize history to free context                             |
+| `/plan`       | Explore, draft a plan, approve, then execute                  |
+| `/goal`       | Set a persistent goal (`/goal done`·`pause`·`resume`·`clear`) |
+| `/auto`       | Keep working toward the goal without pausing                  |
+| `/rewind`     | Undo the agent's file changes since the last snapshot         |
+| `/undo`       | Remove the last exchange from history                         |
+| `/clear`      | Clear conversation history                                    |
+| `Shift+Tab`   | Cycle permission mode: normal → accept edits → plan          |
+
+### Project guide
+
+If your repository has an `AGENTS.md` (or `RUBYCLI.md` / `CLAUDE.md`), RubyCLI
+loads it into the system prompt automatically, walking up from the current
+directory. Run `/init` to generate one for an existing project.
 
 ## Configuration
 

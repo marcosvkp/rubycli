@@ -7,7 +7,7 @@ import { readLine, loadHistory, saveHistory, type SlashCommand } from "./input.j
 import { expandMentions } from "./mentions.js";
 import { probeServer } from "./mcp-cmd.js";
 import { loadMcpConfig } from "../mcp/config.js";
-import { AGENT_DIR } from "../state/config.js";
+import { AGENT_DIR, loadConfig } from "../state/config.js";
 import { Session } from "../state/session.js";
 import { printSkillActivated, printError, printInfo } from "./renderer.js";
 import { createConfirmFn } from "./confirm.js";
@@ -19,23 +19,35 @@ import { loadGoal, setGoal, setGoalStatus, clearGoal, noteGoal, type Goal } from
 import { sessionStatus } from "./status-state.js";
 import { activateFooter, releaseFooter, updateFooter } from "./status-footer.js";
 import { createClient, createCompactionClient } from "../providers/factory.js";
-import { redactRubyKey } from "../rubycli.js";
+import { maskApiKey, redactRubyKey, API_KEY_ENV, PRODUCT_NAME } from "../rubycli.js";
+import pkg from "../../package.json";
+import type { ProjectDoc } from "../core/prompt.js";
+import { INIT_DOC_NAME, displayPath, initDocPath } from "./project-doc.js";
+import { gitDiffStat, gitDiffFull, gitBranch } from "./git-info.js";
 
-/** Session-scoped connection info the REPL needs for /model switching. */
+/** Session-scoped connection info the REPL needs for /model switching and /status. */
 export interface ReplConnection {
   apiKey?: string;
   provider: string;
   baseUrl: string;
   contextWindow?: number;
   temperature?: number;
+  /** MCP servers connected at startup (for /status). */
+  mcpConnectedCount?: number;
+  /** Project instruction file loaded into the system prompt (for /status, /init). */
+  projectDoc?: ProjectDoc | null;
 }
 
 // Built-in slash commands (always available)
 const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: "help", description: "list available skills and commands" },
+  { name: "init", description: "create or update the project guide (AGENTS.md)" },
   { name: "plan", description: "explore and draft a plan, then approve before executing" },
   { name: "compact", description: "summarize older conversation history to free context" },
   { name: "context", description: "show current token usage vs. context window" },
+  { name: "cost", description: "show token usage totals for this session" },
+  { name: "status", description: "show connection, model, permissions and project settings" },
+  { name: "diff", description: "show uncommitted changes in the working tree" },
   { name: "model", description: "show or switch the session model (lists API models)" },
   { name: "effort", description: "show or set reasoning effort: low | medium | high" },
   { name: "goal", description: "set, show, pause, resume or clear the session goal" },
@@ -262,6 +274,114 @@ export async function runRepl(
       continue;
     }
 
+    // /cost — session token totals. Reads the cumulative counters the runner
+    // feeds from real API usage; costs in currency are not reported by the
+    // backend, so this deliberately shows tokens only.
+    if (input === "/cost") {
+      const s = sessionStatus;
+      const total = s.totalInputTokens + s.totalOutputTokens;
+      if (s.calls === 0) {
+        printInfo("No LLM calls yet this session.");
+      } else {
+        printInfo(`LLM calls:     ${s.calls.toLocaleString()}`);
+        printInfo(`Input tokens:  ${s.totalInputTokens.toLocaleString()}`);
+        printInfo(`Output tokens: ${s.totalOutputTokens.toLocaleString()}`);
+        if (s.totalCachedTokens > 0) {
+          printInfo(`Cached tokens: ${s.totalCachedTokens.toLocaleString()}`);
+        }
+        if (s.totalReasoningTokens > 0) {
+          printInfo(`Reasoning:     ${s.totalReasoningTokens.toLocaleString()}`);
+        }
+        printInfo(`Total:         ${total.toLocaleString()} tokens`);
+        printInfo(chalk.dim("(the RubyCLI API reports tokens, not a monetary cost)"));
+      }
+      continue;
+    }
+
+    // /diff — uncommitted working-tree changes, straight from git (no model call).
+    if (input === "/diff" || input.startsWith("/diff ")) {
+      const wantFull = /^(full|all|patch)$/i.test(input.slice(5).trim());
+      const stat = await gitDiffStat(cwd);
+      if (stat === null) {
+        printError("Not a git repository (or git is unavailable).");
+      } else if (stat.trim().length === 0) {
+        printInfo("No uncommitted changes.");
+      } else if (!wantFull) {
+        process.stderr.write(stat.trimEnd() + "\n");
+        printInfo(chalk.dim("\nRun /diff full for the patch."));
+      } else {
+        const res = await gitDiffFull(cwd);
+        process.stderr.write((res?.text ?? "").trimEnd() + "\n");
+        if (res?.truncated) printInfo(chalk.dim("(truncated)"));
+      }
+      continue;
+    }
+
+    // /status — one-screen diagnosis: connection, model, key source, project.
+    if (input === "/status") {
+      const config = await loadConfig();
+      const key = connection?.apiKey ?? config.rubyApiKey ?? process.env[API_KEY_ENV];
+      const keySource = process.env[API_KEY_ENV]
+        ? `${API_KEY_ENV} (environment)`
+        : config.rubyApiKey
+          ? "~/.rubycli/config.json"
+          : key
+            ? "session (not persisted)"
+            : "none — run 'ruby' to configure";
+      const stats = agent.getContextStats();
+      const window = sessionStatus.contextWindow ?? stats.contextWindow;
+      const branch = await gitBranch(cwd);
+      const goal = await loadGoal(cwd);
+      const effort = agent.getReasoningEffort();
+      const rows: [string, string][] = [
+        ["Product", `${PRODUCT_NAME} ${pkg.version}`],
+        ["Endpoint", connection?.baseUrl ?? "(default)"],
+        ["Provider", connection?.provider ?? "rubycli"],
+        ["Model", agent.getModel()],
+        ["Context", window > 0 ? `${(window / 1000).toFixed(0)}k tokens` : "unknown"],
+        ["API key", key ? `${maskApiKey(key)}  (${keySource})` : "not configured"],
+        ["Reasoning", effort ? `${effort}` : "default"],
+        ["Permissions", agent.getPermissionMode()],
+        ["MCP servers", `${connection?.mcpConnectedCount ?? 0} connected`],
+        [
+          "Project guide",
+          connection?.projectDoc ? displayPath(connection.projectDoc.path, cwd) : "none",
+        ],
+        ["Git branch", branch ?? "(none)"],
+        ["Session", session.id],
+        ["Goal", goal ? `[${goal.status}] ${goal.text}` : "none"],
+      ];
+      const width = Math.max(...rows.map(([k]) => k.length));
+      for (const [k, v] of rows) {
+        process.stderr.write(`${chalk.dim(k.padEnd(width))}  ${v}\n`);
+      }
+      continue;
+    }
+
+    // /init — create or update the project guide (AGENTS.md).
+    if (input === "/init") {
+      const existing = connection?.projectDoc ?? null;
+      const target = initDocPath(existing, cwd);
+      const rel = displayPath(target, cwd);
+      const context = existing
+        ? `An existing guide was loaded from ${displayPath(existing.path, cwd)} — UPDATE that file in place, preserving its useful content.`
+        : `No guide exists yet — create ${rel}.`;
+      printInfo(`Analyzing the project to write ${rel}…\n`);
+      const initPrompt =
+        `Create or update the repository guide at \`${rel}\`${rel === INIT_DOC_NAME ? "" : ` (${INIT_DOC_NAME})`}.\n` +
+        `${context}\n\n` +
+        `Investigate the repository with read/glob/grep/ls before writing — ` +
+        `never guess. Cover, concisely:\n` +
+        `- What the project is, its language/runtime, and how it is structured\n` +
+        `- The REAL build, test, lint, format and run commands (from package.json, Makefile, CI config, …)\n` +
+        `- A short architecture overview and where the main entry points live\n` +
+        `- Key conventions a contributor must follow\n\n` +
+        `Write ONLY that guide file — make no other changes. Keep it under ~80 lines ` +
+        `and prefer verified facts over generic advice.`;
+      await runAgentTurn(agent, session, initPrompt);
+      continue;
+    }
+
     // /model — show or switch the session model.
     // Bare "/model" lists API models (when a key is available) and the current
     // one; "/model <name-or-number>" switches for this session only.
@@ -371,7 +491,9 @@ export async function runRepl(
               temperature: connection?.temperature,
               reasoningEffort: effort,
             }),
-          (model, effort) =>
+          // Compaction is a summarization call — it deliberately keeps the
+          // default effort rather than inheriting the user's setting.
+          (model, _effort) =>
             createCompactionClient(model, connection?.apiKey ?? "", {
               provider: connection?.provider ?? "rubycli",
               baseUrl: connection?.baseUrl,

@@ -16,6 +16,7 @@ import { Session } from "../state/session.js";
 import { loadSystemInstruction } from "../core/prompt.js";
 import { resolveApiKey } from "./keys.js";
 import { sessionStatus } from "./status-state.js";
+import { discoverProjectDoc } from "./project-doc.js";
 import { runRepl } from "./repl.js";
 import { createConfirmFn, createAutoApproveConfirmFn } from "./confirm.js";
 import { printError, printInfo } from "./renderer.js";
@@ -210,6 +211,8 @@ async function startChat(
     baseUrl,
     contextWindow,
     effectiveTemperature,
+    mcpConnectedCount,
+    projectDoc,
   } = await createAgent(
     modelOverride,
     maxTurns,
@@ -240,6 +243,8 @@ async function startChat(
     baseUrl,
     contextWindow,
     temperature: effectiveTemperature,
+    mcpConnectedCount,
+    projectDoc,
   });
   await cleanup(); // normal exit (Ctrl+D or /exit)
 }
@@ -537,7 +542,14 @@ async function createAgent(
 
   const snapshotManager = new SnapshotManager();
 
-  const systemInstruction = await loadSystemInstruction();
+  // Project guidance (AGENTS.md / RUBYCLI.md / CLAUDE.md), discovered by walking
+  // up from cwd. This is what makes a versioned repo guide actually reach the
+  // model — previously the CLI never read it.
+  const projectDoc = await discoverProjectDoc(process.cwd());
+  const systemInstruction = await loadSystemInstruction(projectDoc);
+  if (debugOn && projectDoc) {
+    process.stderr.write(`[${CLI_COMMAND}] debug: project doc ${projectDoc.path}\n`);
+  }
   const compactionClient = createCompactionClient(model, apiKey, { provider, baseUrl });
   const { contextWindow: resolvedWindow, warnings } = await resolveContextWindow(
     model,
@@ -572,5 +584,7 @@ async function createAgent(
     baseUrl,
     contextWindow,
     effectiveTemperature,
+    mcpConnectedCount: mcpManager.connectedCount,
+    projectDoc,
   };
 }
