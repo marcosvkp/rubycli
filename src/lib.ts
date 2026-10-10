@@ -31,6 +31,28 @@ export { ContextManager } from "./core/context.js";
 // normal / accept-edits / plan distinction.
 export { executeCalls, truncateOutput } from "./core/executor.js";
 export type { ConfirmFn, ExecutionResult, ExecutorDeps, PermissionMode } from "./core/executor.js";
+// The pure policy half of the gate: a host decides allow/deny/ask here and renders
+// the question however it likes (terminal picker, Electron modal, test double).
+// `src/cli/confirm.ts` is the terminal rendering of exactly these functions.
+export {
+  buildPermissionSources,
+  createForcesConfirmationFn,
+  decideAutoApprove,
+  decideConfirmation,
+  globMatch,
+  grantKeysFor,
+  ignoredProjectAllowWarning,
+  matchesDenyPattern,
+  matchesNeverAutoApprove,
+  primaryArgFor,
+} from "./core/permissions.js";
+export type { ConfirmDecision, PermissionSources } from "./core/permissions.js";
+export {
+  clearProjectPermissions,
+  loadProjectPermissions,
+  saveProjectPermissions,
+} from "./state/project-permissions.js";
+export type { ProjectPermissions } from "./state/project-permissions.js";
 
 // --- Context management -----------------------------------------------------
 export { compactHistory, contextWindowFor, COMPACTION_TARGET_TOKENS } from "./core/compact.js";

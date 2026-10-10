@@ -1,214 +1,48 @@
+/**
+ * Terminal-host wiring for the permission gate.
+ *
+ * The *policy* (what is allowed, denied, or must be asked) lives in
+ * `src/core/permissions.ts` and is host-agnostic. This file adds the terminal half:
+ * a `@clack/prompts` picker, stderr rendering, and the "always allow" persistence
+ * paths. A GUI host imports `core/permissions.js` directly and never touches this
+ * file — that separation is what keeps `@clack/prompts` out of an embedder's
+ * dependency graph.
+ *
+ * The policy symbols are re-exported below so existing callers and tests that
+ * import them from `./confirm.js` keep working.
+ */
+
 import chalk from "chalk";
 import type { ConfirmFn } from "../core/executor.js";
-import { loadConfig, saveConfig, type Config } from "../state/config.js";
-import { loadSettings, type Settings } from "../state/settings.js";
 import {
-  loadProjectPermissions,
-  saveProjectPermissions,
-  type ProjectPermissions,
-} from "../state/project-permissions.js";
+  buildPermissionSources,
+  createForcesConfirmationFn,
+  decideAutoApprove,
+  decideConfirmation,
+  grantKeysFor,
+  ignoredProjectAllowWarning,
+  matchesDenyPattern,
+  matchesNeverAutoApprove,
+  globMatch,
+} from "../core/permissions.js";
+import { loadConfig, saveConfig } from "../state/config.js";
+import { loadSettings } from "../state/settings.js";
+import { loadProjectPermissions, saveProjectPermissions } from "../state/project-permissions.js";
 import { selectKey } from "./input.js";
 
-// Pattern format for deny rules: "toolName(argGlob)" where * matches any chars.
-// bash → matches args.command; write/edit/multi_edit → args.file_path; others → JSON(args).
-// Example: "bash(rm -rf *)" or "write(src/cli/*)" or "bash(*)" (all bash).
-
-export function globMatch(pattern: string, str: string): boolean {
-  const re = new RegExp(
-    "^" + pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$",
-  );
-  return re.test(str);
-}
-
-export function matchesDenyPattern(
-  patterns: string[],
-  toolName: string,
-  args: Record<string, unknown>,
-): boolean {
-  const primaryArg =
-    toolName === "bash"
-      ? String(args.command ?? "")
-      : toolName === "write" || toolName === "edit" || toolName === "multi_edit"
-        ? String(args.file_path ?? "")
-        : JSON.stringify(args);
-
-  for (const pattern of patterns) {
-    const parenOpen = pattern.indexOf("(");
-    if (parenOpen === -1 || !pattern.endsWith(")")) continue;
-
-    const patTool = pattern.slice(0, parenOpen);
-    const patArg = pattern.slice(parenOpen + 1, -1);
-
-    if (patTool === toolName && globMatch(patArg, primaryArg)) return true;
-  }
-  return false;
-}
-
-/** Builds a sync function that returns true when a tool call matches one of the
- *  given ask patterns and must therefore be confirmed even if the tool's own
- *  requiresConfirmation would return false. */
-export function createForcesConfirmationFn(
-  askPatterns: string[],
-): (toolName: string, args: Record<string, unknown>) => boolean {
-  return (toolName, args) => {
-    if (askPatterns.length === 0) return false;
-    return matchesDenyPattern(askPatterns, toolName, args);
-  };
-}
-
-export interface PermissionSources {
-  /** Trusted global grants — only ever sourced from the user's ~/.rubycli/config.json. */
-  globalAllowSet: Set<string>;
-  /** Trusted per-project grants — sourced from ~/.rubycli/project-permissions/<hash>.json,
-   *  which lives OUTSIDE the repository and therefore cannot be shipped by a repo (#308). */
-  projectAllowSet: Set<string>;
-  /** Merged deny patterns (global + project). Restrictive rules are safe to accept
-   *  from project scope because they can only block, never grant. */
-  denyPatterns: string[];
-  /** Merged ask patterns (global + project). */
-  askPatterns: string[];
-}
-
-/**
- * Build the permission sources used by the HITL gate.
- *
- * Grants (`allow`) are sourced only from user-controlled storage: the global
- * `~/.rubycli/config.json` and the per-project `~/.rubycli/project-permissions/<hash>.json`
- * (#308). Project-scoped `.rubycli/settings.json` ships with the repository and is
- * therefore untrusted: a hostile repo could pre-populate `permissions.allow` to
- * silently bypass the confirmation gate (GHSA-3g98-ffw6-87mg). Restrictive rules
- * (`ask`, `deny`) are still merged from project scope — they can only prompt or
- * block, never auto-approve.
- */
-export function buildPermissionSources(
-  config: Config,
-  settings: Settings,
-  storedProject?: ProjectPermissions,
-): PermissionSources {
-  return {
-    globalAllowSet: new Set(config.permissions?.allow ?? []),
-    projectAllowSet: new Set(storedProject?.allow ?? []),
-    denyPatterns: [...(config.permissions?.deny ?? []), ...(settings.permissions?.deny ?? [])],
-    askPatterns: [...(config.permissions?.ask ?? []), ...(settings.permissions?.ask ?? [])],
-  };
-}
-
-export type ConfirmDecision = "allow" | "deny" | "ask";
-
-/**
- * Returns a stderr warning when the project-scoped `.rubycli/settings.json` carries
- * `allow` entries that are intentionally ignored (they ship with the repo and are
- * untrusted — see GHSA-3g98-ffw6-87mg). This explains why a user's pre-existing
- * project grants stopped working and surfaces a repo attempting the attack.
- * Restrictive `ask`/`deny` from project scope are still honoured, so not flagged.
- */
-export function ignoredProjectAllowWarning(settings: Settings): string | null {
-  const n = settings.permissions?.allow?.length ?? 0;
-  if (n === 0) return null;
-  return (
-    `[rubycli] ignoring ${n} project-scoped allow rule(s) in .rubycli/settings.json — ` +
-    "grants must be global (~/.rubycli/config.json)."
-  );
-}
-
-/**
- * Pure policy check for a tool call.
- *  - "allow": globally pre-approved; no prompt needed.
- *  - "deny":  blocked by a deny pattern, or non-interactive and not pre-approved.
- *  - "ask":   interactive and requires a prompt.
- *
- * Only the trusted `globalAllowSet` is consulted for grants; project-scope allow
- * entries never reach this function (see buildPermissionSources).
- */
-export function decideConfirmation(
-  globalAllowSet: Set<string>,
-  denyPatterns: string[],
-  toolName: string,
-  args: Record<string, unknown>,
-  interactive: boolean,
-): ConfirmDecision {
-  if (!interactive) return "deny";
-  if (denyPatterns.length > 0 && matchesDenyPattern(denyPatterns, toolName, args)) {
-    return "deny";
-  }
-  const exactKey = `${toolName}:${JSON.stringify(args)}`;
-  if (globalAllowSet.has(exactKey) || globalAllowSet.has(`${toolName}:*`)) return "allow";
-  const mcpMatch = toolName.match(/^mcp__(.+?)__/);
-  if (mcpMatch && globalAllowSet.has(`mcp__${mcpMatch[1]}__*`)) return "allow";
-  return "ask";
-}
-
-// Commands that are never auto-approved under `--yes`, even if the user's deny list
-// does not cover them. These are catastrophic and not reliably listed by every user;
-// bias toward blocking (a false positive is recoverable by running without --yes;
-// a false negative is not). See GHSA-hx58-45j4-fr7m.
-//
-// The rm rule NORMALISES the target rather than matching its spelling: any suffix
-// (rm -rf /*, ~/, //, /. , '/', ${HOME}) still designates the whole root/home and is
-// blocked, while /tmp/build and ~/src keep a path component and are left alone.
-// Matching spelling instead (e.g. a `(?=\s|$)` lookahead) left 11 bypasses.
-
-/** Recursive+force `rm`, short (-rf/-fr, any order) or long form. `[rR]`: both
- *  spellings mean recursive, so a lowercase-only pattern lets `rm -Rf /` through. */
-const RM_RECURSIVE_FORCE =
-  /\brm\s+(?:(?:-[a-zA-Z]*[rR][a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*[rR])\b|(?:--force\b[\s\S]*?--recursive\b|--recursive\b[\s\S]*?--force\b))/;
-
-/** True if a recursive-force `rm` targets the filesystem root or the whole home
- *  directory, however it is spelled. Quotes are stripped, `~`/`$HOME`/`${HOME}`
- *  collapse to a single marker, and trailing `/`, `.`, `*` are removed before the
- *  check — so `/`, `//`, `/.`, `/*`, `'/'` all reduce to the root, while
- *  `/tmp/build` and `~/src` retain a component and are correctly left alone. */
-function rmTargetsRootOrHome(cmd: string): boolean {
-  const idx = cmd.search(RM_RECURSIVE_FORCE);
-  if (idx < 0) return false;
-  for (const rawTok of cmd.slice(idx).split(/\s+/).slice(1)) {
-    const unquoted = rawTok.replace(/^['"]|['"]$/g, "");
-    if (unquoted === "" || unquoted === "--" || unquoted.startsWith("-")) continue;
-    const homeNormalised = unquoted.replace(/^\$\{HOME\}|^\$HOME|^~/, "/HOME");
-    // Strip trailing glob/dot/slash noise that still designates the whole target.
-    const stripped = homeNormalised.replace(/[/*.]+$/g, "");
-    if (stripped === "" || stripped === "/HOME") return true;
-  }
-  return false;
-}
-
-/** Remote code piped into a shell. Tolerates an interposed command (e.g. `| sudo sh`)
- *  and covers interpreters beyond sh/bash. */
-const PIPE_TO_SHELL =
-  /\b(?:curl|wget)\b[^|]*\|\s*(?:\w+\s+)*(?:sh|bash|zsh|dash|ksh|fish|python[0-9.]*|perl|ruby|node)\b/;
-
-/** Classic fork bomb. */
-const FORK_BOMB = /:\s*\(\s*\)\s*\{\s*:\s*\|:/;
-
-/**
- * True if a call must never be auto-approved (built-in blocklist).
- *
- * Known and accepted conservative match: a dangerous command quoted inside another
- * command (e.g. `echo 'rm -rf /' >> notes.txt`) is also blocked. Separating a quoted
- * occurrence from a real invocation needs shell parsing; per this list's stated policy
- * a false positive is recoverable (re-run without --yes) while a false negative is not.
- */
-export function matchesNeverAutoApprove(toolName: string, args: Record<string, unknown>): boolean {
-  if (toolName !== "bash") return false;
-  const cmd = String(args.command ?? "");
-  return rmTargetsRootOrHome(cmd) || PIPE_TO_SHELL.test(cmd) || FORK_BOMB.test(cmd);
-}
-
-/**
- * Pure decision for the `--yes` / auto-approve path. Returns "deny" when the call
- * matches the built-in catastrophic blocklist OR the user's deny patterns; otherwise
- * "allow". This exists so deny rules and the blocklist cannot be bypassed by --yes
- * (GHSA-hx58-45j4-fr7m).
- */
-export function decideAutoApprove(
-  toolName: string,
-  args: Record<string, unknown>,
-  denyPatterns: string[],
-): "allow" | "deny" {
-  if (matchesNeverAutoApprove(toolName, args)) return "deny";
-  if (denyPatterns.length > 0 && matchesDenyPattern(denyPatterns, toolName, args)) return "deny";
-  return "allow";
-}
+// Re-exported for backward compatibility: these used to be defined here.
+export {
+  buildPermissionSources,
+  createForcesConfirmationFn,
+  decideAutoApprove,
+  decideConfirmation,
+  globMatch,
+  grantKeysFor,
+  ignoredProjectAllowWarning,
+  matchesDenyPattern,
+  matchesNeverAutoApprove,
+};
+export type { ConfirmDecision, PermissionSources } from "../core/permissions.js";
 
 /**
  * Build a confirmFn for the `--yes` auto-approve path. Unlike the interactive
@@ -289,7 +123,7 @@ export async function createConfirmFn(): Promise<ConfirmBundle> {
     process.stderr.write(chalk.dim(`     ${detail}\n`));
 
     const isMcp = toolName.startsWith("mcp__");
-    const mcpMatch = toolName.match(/^mcp__(.+?)__/);
+    const keys = grantKeysFor(toolName, args);
     const options: Array<{ key: string; label: string }> = [
       { key: "y", label: "Yes, run once" },
       { key: "p", label: "Yes, always for this project  (~/.rubycli/project-permissions/)" },
@@ -297,10 +131,11 @@ export async function createConfirmFn(): Promise<ConfirmBundle> {
     ];
     if (isMcp) {
       options.push({ key: "t", label: "Yes, always for this tool, any args  (project)" });
-      if (mcpMatch) {
+      if (keys.mcpServerWide) {
+        const server = toolName.match(/^mcp__(.+?)__/)?.[1];
         options.push({
           key: "s",
-          label: `Yes, always for any tool from '${mcpMatch[1]}'  (project)`,
+          label: `Yes, always for any tool from '${server}'  (project)`,
         });
       }
     }
@@ -311,13 +146,13 @@ export async function createConfirmFn(): Promise<ConfirmBundle> {
     if (choice === null || choice === "n") return "deny";
 
     if (choice === "p") {
-      await persistProjectAllow(`${toolName}:${JSON.stringify(args)}`);
+      await persistProjectAllow(keys.exact);
     } else if (choice === "g") {
-      await persistGlobalAllow(`${toolName}:${JSON.stringify(args)}`);
+      await persistGlobalAllow(keys.exact);
     } else if (choice === "t") {
-      await persistProjectAllow(`${toolName}:*`);
-    } else if (choice === "s" && mcpMatch) {
-      await persistProjectAllow(`mcp__${mcpMatch[1]}__*`);
+      await persistProjectAllow(keys.toolWide);
+    } else if (choice === "s" && keys.mcpServerWide) {
+      await persistProjectAllow(keys.mcpServerWide);
     }
 
     return "allow";

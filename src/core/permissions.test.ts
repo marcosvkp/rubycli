@@ -8,7 +8,7 @@ import {
   ignoredProjectAllowWarning,
   decideAutoApprove,
   matchesNeverAutoApprove,
-} from "./confirm.js";
+} from "./permissions.js";
 import type { Config } from "../state/config.js";
 import type { Settings } from "../state/settings.js";
 import type { ProjectPermissions } from "../state/project-permissions.js";
