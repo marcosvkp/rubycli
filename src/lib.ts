@@ -79,6 +79,17 @@ export type {
   ToolResult,
 } from "./providers/types.js";
 
+// --- Model catalog ----------------------------------------------------------
+// `GET /v1/models`. A host needs this to build a model picker and to learn each
+// model's real context window, which the static registry table can only guess at.
+export {
+  fetchRemoteModels,
+  remoteContextWindow,
+  remoteMaxOutputTokens,
+  isRubyCatalogModel,
+} from "./providers/catalog.js";
+export type { FetchModelsResult, RemoteModel } from "./providers/catalog.js";
+
 // --- Tools ------------------------------------------------------------------
 export { createDefaultRegistry } from "./tools/index.js";
 export { ToolRegistry } from "./tools/registry.js";

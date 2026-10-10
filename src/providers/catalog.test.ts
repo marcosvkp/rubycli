@@ -5,8 +5,8 @@ import {
   remoteContextWindow,
   remoteMaxOutputTokens,
   isRubyCatalogModel,
-} from "./models.js";
-import { PRESETS } from "../providers/registry.js";
+} from "./catalog.js";
+import { PRESETS } from "./registry.js";
 import type { Config } from "../state/config.js";
 
 const realFetch = globalThis.fetch;
