@@ -7,6 +7,15 @@
     "ruby": "dist/index.js",
     "rubycli": "dist/index.js"
   },
+  "main": "./dist/lib.js",
+  "types": "./dist/lib.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/lib.d.ts",
+      "import": "./dist/lib.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist"
   ],
@@ -41,7 +50,8 @@
   "scripts": {
     "release": "./scripts/publish.sh",
     "prepack": "npm run build",
-    "build": "tsup",
+    "build": "tsup && node scripts/copy-builtin-skills.mjs && npm run build:types",
+    "build:types": "tsc --emitDeclarationOnly",
     "dev": "tsx --env-file=.env src/cli/index.ts",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",

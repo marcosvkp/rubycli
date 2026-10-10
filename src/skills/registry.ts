@@ -1,17 +1,44 @@
+import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { loadSkillFile, type SkillMeta } from "./loader.js";
 
+/**
+ * Locates the bundled built-in skills directory.
+ *
+ * This cannot be a single path expression. The module runs in two layouts:
+ *
+ *  - from source, as `src/skills/registry.ts`, where `../../skills/builtin`
+ *    happens to resolve correctly because the file's own name is consumed as a
+ *    path segment;
+ *  - bundled, as `dist/lib.js` or `dist/index.js`, where the same expression
+ *    resolves to `<package>/skills/builtin` — a directory that is never published,
+ *    so the package silently shipped with zero built-in skills.
+ *
+ * Candidates are probed in order and the first existing directory wins. Returns
+ * undefined when none exist, which callers treat as "no built-ins" rather than an
+ * error: a host that ships no skills is a valid deployment.
+ */
+function findBuiltinSkillsDir(): string | undefined {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    join(here, "builtin"), // source:      src/skills/builtin
+    join(here, "skills", "builtin"), // bundled:     dist/skills/builtin (copied by the build)
+    join(here, "..", "src", "skills", "builtin"), // dev bundle:  dist/ -> src/skills/builtin
+  ];
+  return candidates.find((dir) => existsSync(dir));
+}
+
 // Skill discovery paths in priority order (first wins on name conflict)
 function getSkillDirs(projectRoot: string): string[] {
-  const builtinDir = join(fileURLToPath(import.meta.url), "../../skills/builtin");
+  const builtinDir = findBuiltinSkillsDir();
   return [
     join(projectRoot, ".rubycli", "skills"), // project-scoped
     join(projectRoot, ".agents", "skills"), // cross-client standard
     join(homedir(), ".rubycli", "skills"), // user-global
-    resolve(builtinDir), // bundled built-ins
+    ...(builtinDir ? [builtinDir] : []), // bundled built-ins
   ];
 }
 
