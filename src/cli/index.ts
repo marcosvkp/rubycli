@@ -7,7 +7,7 @@ import {
   providerDetectionWarning,
 } from "../providers/registry.js";
 import { resolveContextWindow } from "./context-window.js";
-import { fetchRemoteModels, remoteContextWindow } from "./models.js";
+import { fetchRemoteModels, remoteContextWindow, isRubyCatalogModel } from "./models.js";
 import { Agent } from "../core/agent.js";
 import { createDefaultRegistry, ToolRegistry } from "../tools/index.js";
 import { SkillRegistry } from "../skills/registry.js";
@@ -35,11 +35,12 @@ import {
   CLI_COMMAND,
   DEFAULT_MODEL,
   DEFAULT_BASE_URL,
-  API_KEY_ENV,
+  API_KEY_ENVS,
   DEBUG_ENV,
   MODEL_ENV,
   BASE_URL_ENV,
   redactRubyKey,
+  readApiKeyFromEnv,
 } from "../rubycli.js";
 
 function parseTurns(raw: string): number {
@@ -367,9 +368,12 @@ function resolveProvider(flag: string | undefined, config: Config, model: string
       `Invalid --provider value '${raw}'. Valid values: ${listProviderIds().join(", ")}`,
     );
   }
-  // RubyCLI is the default product experience — only models outside the ruby-*
-  // namespace fall through to registry detection (advanced use).
-  if (model.startsWith("ruby-")) return "rubycli";
+  // RubyCLI is the default product experience, and its catalog ids collide with
+  // third-party prefixes (`kimi-k3`, `glm-5.3`, `deepseek-v4.1-flash`, `gpt-6-*`,
+  // ``). Prefer the Ruby catalog whenever a Ruby key is configured, so
+  // those models reach Ruby instead of a provider the user has no key for.
+  const hasRubyKey = readApiKeyFromEnv() !== undefined || Boolean(config.rubyApiKey);
+  if (isRubyCatalogModel(model, { hasRubyKey })) return "rubycli";
   const detected = detectProvider(model);
   const warning = providerDetectionWarning(model, detected);
   if (warning) process.stderr.write(`[${CLI_COMMAND}] warn: ${redactRubyKey(warning)}\n`);
@@ -388,14 +392,14 @@ function resolveProvider(flag: string | undefined, config: Config, model: string
 async function resolveRubyApiKey(config: Config, provider: string): Promise<string> {
   if (provider !== "rubycli") return resolveApiKey(provider, config);
 
-  const fromEnv = process.env[API_KEY_ENV];
+  const fromEnv = readApiKeyFromEnv();
   if (fromEnv) return fromEnv;
   if (config.rubyApiKey) return config.rubyApiKey;
 
   // Interactive onboarding — only when attached to a TTY.
   if (!process.stdin.isTTY) {
     throw new Error(
-      `No ${PRODUCT_NAME} API key configured. Set ${API_KEY_ENV}, ` +
+      `No ${PRODUCT_NAME} API key configured. Set ${API_KEY_ENVS.join(" or ")}, ` +
         `or run '${CLI_COMMAND}' interactively to configure one.`,
     );
   }

@@ -69,9 +69,33 @@ export const PRESETS: Record<string, ProviderPreset> = {
     wire: "openai",
     // Resolved at runtime: RUBYCLI_BASE_URL > config baseUrl > this default.
     baseUrl: "https://app.rubycli.cloud/v1",
-    apiKeyEnv: ["RUBYCLI_API_KEY"],
+    // RUBY_API_KEY is the name used by the public docs, the installer and the
+    // Codex/Claude Code configs; RUBYCLI_API_KEY is what this CLI has always read.
+    apiKeyEnv: ["RUBY_API_KEY", "RUBYCLI_API_KEY"],
+    // RubyCLI Cloud serves a *per-account* catalog whose ids are arbitrary by design
+    // (the backend is the source of truth), so this list is a convenience only —
+    // unrecognised names still fall back to DEFAULT_PROVIDER, which is "rubycli".
     detectPrefixes: ["ruby-"],
-    models: [{ id: "ruby-auto", contextWindow: 200_000 }],
+    // Static fallbacks, used before /v1/models answers or when it is unreachable.
+    // Context windows verified 2026-10-10 against GET /v1/models on a live account.
+    // `nativeThinking` mirrors the catalog's `supports_reasoning`, which is what
+    // makes a separate `think` tool redundant.
+    models: [
+      { id: "ruby-smart", contextWindow: 512_000 },
+      { id: "gpt-6.1-sol", contextWindow: 1_000_000, nativeThinking: true },
+      { id: "gpt-6-sol", contextWindow: 1_000_000, nativeThinking: true },
+      { id: "gpt-6-astra", contextWindow: 1_000_000, nativeThinking: true },
+      { id: "gpt-6-luna", contextWindow: 1_000_000, nativeThinking: true },
+      { id: "deepseek-v4.1-flash", contextWindow: 1_000_000, nativeThinking: true },
+      { id: "glm-5.3-flash", contextWindow: 1_000_000, nativeThinking: true },
+      { id: "glm-5.3", contextWindow: 1_000_000, nativeThinking: true },
+      { id: "claude-haiku-5.5", contextWindow: 1_000_000, nativeThinking: true },
+      { id: "kimi-k3", contextWindow: 1_000_000, nativeThinking: true },
+      { id: "muse-spark-1.3-contributor", contextWindow: 1_000_000 },
+      { id: "mimo-v2.6-flash", contextWindow: 1_048_576, nativeThinking: true },
+      { id: "mimo-v2.6-pro", contextWindow: 1_048_576, nativeThinking: true },
+      { id: "mimo-v2.6-pro-ultraspeed", contextWindow: 1_048_576, nativeThinking: true },
+    ],
   },
 
   gemini: {
@@ -247,7 +271,14 @@ export function detectProviderFromRegistry(model: string): string {
   let bestLen = -1;
 
   for (const preset of Object.values(PRESETS)) {
+    // Prefixes only. The static model tables deliberately do NOT participate here:
+    // names like `kimi-k3`, `glm-5.3` and `deepseek-v4.1-flash` are genuinely
+    // ambiguous — they are served both by their original vendor and by RubyCLI
+    // Cloud's catalog — and this function cannot tell which the user means.
+    // Resolving that needs to know whether a RubyCLI key is configured, so it lives
+    // in the CLI layer (`isRubyCatalogModel` in cli/models.ts).
     for (const prefix of preset.detectPrefixes ?? []) {
+      if (prefix.length === 0) continue;
       if (model.startsWith(prefix) && prefix.length > bestLen) {
         bestId = preset.id;
         bestLen = prefix.length;

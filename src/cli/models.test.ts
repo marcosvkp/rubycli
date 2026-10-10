@@ -1,5 +1,12 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { fetchRemoteModels, resolveBaseUrl, remoteContextWindow } from "./models.js";
+import {
+  fetchRemoteModels,
+  resolveBaseUrl,
+  remoteContextWindow,
+  remoteMaxOutputTokens,
+  isRubyCatalogModel,
+} from "./models.js";
+import { PRESETS } from "../providers/registry.js";
 import type { Config } from "../state/config.js";
 
 const realFetch = globalThis.fetch;
@@ -94,6 +101,44 @@ describe("fetchRemoteModels", () => {
     expect(remoteContextWindow({ id: "a" })).toBeUndefined();
   });
 
+  it("drops catalog entries with an empty or whitespace id", async () => {
+    // Defensive guard: an empty `id` survives a `typeof === "string"` check, and
+    // selecting it would send `model: ""`, rejected with 400 "model should not be
+    // empty". The live catalog has no such entry — it has ``
+    // (an unusual but valid id) — so this covers the per-account catalog changing
+    // under us rather than a defect observed today.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              data: [
+                { id: "ruby-smart" },
+                { id: "", display_name: "the model 5.5" },
+                { id: "   " },
+                { id: "glm-5.3" },
+              ],
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+    const { models } = await fetchRemoteModels("https://x/v1", "k");
+    expect(models.map((m) => m.id)).toEqual(["ruby-smart", "glm-5.3"]);
+  });
+
+  it("parses API-reported max output tokens and tolerates null", () => {
+    // The catalog reports `max_output_tokens: null` for most models, so this must
+    // yield undefined rather than null — a nullish max_tokens is rejected by the API.
+    expect(remoteMaxOutputTokens({ id: "a", max_output_tokens: 131_072 })).toBe(131_072);
+    expect(remoteMaxOutputTokens({ id: "a", maxOutputTokens: 8_192 })).toBe(8_192);
+    expect(remoteMaxOutputTokens({ id: "a", max_output_tokens: null })).toBeUndefined();
+    expect(remoteMaxOutputTokens({ id: "a" })).toBeUndefined();
+    expect(remoteMaxOutputTokens({ id: "a", max_output_tokens: 0 })).toBeUndefined();
+    expect(remoteMaxOutputTokens({ id: "a", max_output_tokens: -1 })).toBeUndefined();
+  });
+
   it("rejects malformed response shapes", async () => {
     vi.stubGlobal(
       "fetch",
@@ -116,5 +161,52 @@ describe("resolveBaseUrl", () => {
     delete process.env.RUBYCLI_BASE_URL;
     expect(resolveBaseUrl({ ...baseConfig(), baseUrl: "https://cfg/v1" })).toBe("https://cfg/v1");
     expect(resolveBaseUrl(baseConfig())).toBe("https://app.rubycli.cloud/v1");
+  });
+});
+
+describe("isRubyCatalogModel", () => {
+  // RubyCLI Cloud re-serves models whose names collide with third-party prefixes.
+  // Preferring Ruby for them is only right when the user actually holds a Ruby key;
+  // otherwise the original vendor is the better guess and third-party setups must
+  // keep working untouched.
+  // ASCII-safe ids only. The catalog also contains one id beginning with another
+  // vendor's prefix; that case is covered by its own test below, which derives the
+  // string from the registry instead of transcribing it.
+  const COLLIDING = [
+    "kimi-k3",
+    "glm-5.3",
+    "glm-5.3-flash",
+    "deepseek-v4.1-flash",
+    "gpt-6-sol",
+    "gpt-6.1-sol",
+    "gpt-6-astra",
+    "gpt-6-luna",
+    "muse-spark-1.3-contributor",
+    "mimo-v2.6-pro",
+  ];
+
+  it.each(COLLIDING)("claims %s for rubycli when a Ruby key is configured", (model) => {
+    expect(isRubyCatalogModel(model, { hasRubyKey: true })).toBe(true);
+  });
+
+  it.each(COLLIDING)("leaves %s alone without a Ruby key", (model) => {
+    expect(isRubyCatalogModel(model, { hasRubyKey: false })).toBe(false);
+  });
+
+  it("claims a catalog model whose name matches another vendor's prefix", () => {
+    // Derived from the registry, not hardcoded — see the COLLIDING comment above.
+    const claudeNamed = PRESETS.rubycli.models.find((m) => m.id.startsWith("claude-"));
+    expect(claudeNamed).toBeDefined();
+    expect(isRubyCatalogModel(claudeNamed!.id, { hasRubyKey: true })).toBe(true);
+    expect(isRubyCatalogModel(claudeNamed!.id, { hasRubyKey: false })).toBe(false);
+  });
+
+  it("does not claim models the Ruby catalog does not serve", () => {
+    const opts = { hasRubyKey: true };
+    expect(isRubyCatalogModel("glm-4.5", opts)).toBe(false);
+    expect(isRubyCatalogModel("gemini-3-flash-preview", opts)).toBe(false);
+    expect(isRubyCatalogModel("gpt-4.1-mini", opts)).toBe(false);
+    expect(isRubyCatalogModel("deepseek-chat", opts)).toBe(false);
+    expect(isRubyCatalogModel("some-unknown-model", opts)).toBe(false);
   });
 });

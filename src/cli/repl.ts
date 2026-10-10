@@ -19,7 +19,7 @@ import { loadGoal, setGoal, setGoalStatus, clearGoal, noteGoal, type Goal } from
 import { sessionStatus } from "./status-state.js";
 import { activateFooter, releaseFooter, updateFooter } from "./status-footer.js";
 import { createClient, createCompactionClient } from "../providers/factory.js";
-import { maskApiKey, redactRubyKey, API_KEY_ENV, PRODUCT_NAME } from "../rubycli.js";
+import { maskApiKey, redactRubyKey, findApiKeyInEnv, PRODUCT_NAME } from "../rubycli.js";
 import pkg from "../../package.json";
 import type { ProjectDoc } from "../core/prompt.js";
 import { INIT_DOC_NAME, displayPath, initDocPath } from "./project-doc.js";
@@ -320,9 +320,10 @@ export async function runRepl(
     // /status — one-screen diagnosis: connection, model, key source, project.
     if (input === "/status") {
       const config = await loadConfig();
-      const key = connection?.apiKey ?? config.rubyApiKey ?? process.env[API_KEY_ENV];
-      const keySource = process.env[API_KEY_ENV]
-        ? `${API_KEY_ENV} (environment)`
+      const envKey = findApiKeyInEnv();
+      const key = connection?.apiKey ?? config.rubyApiKey ?? envKey?.value;
+      const keySource = envKey
+        ? `${envKey.name} (environment)`
         : config.rubyApiKey
           ? "~/.rubycli/config.json"
           : key
