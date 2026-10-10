@@ -6,8 +6,8 @@ Practices established in this project. Follow these when adding or changing code
 
 **Colocate tests with source.** Every module has a `.test.ts` file next to it:
 ```
-src/agent/context.ts
-src/agent/context.test.ts
+src/core/context.ts
+src/core/context.test.ts
 ```
 A missing test file is immediately visible. Moving a module moves its test automatically.
 
@@ -41,12 +41,12 @@ npm run typecheck && npm run lint && npm run format:check && npm test
 ## Code Organisation
 
 **Each layer owns its concern exclusively:**
-- Model Layer (`src/model/`) — LLM provider abstraction only. Never touches the filesystem. Provider SDKs (`@google/genai`, `@anthropic-ai/sdk`) are imported only inside the respective client files.
+- Provider Layer (`src/providers/`) — LLM provider abstraction only. Never touches the filesystem. Provider SDKs (`@google/genai`, `@anthropic-ai/sdk`) are imported only inside the respective client files.
 - Tool System (`src/tools/`) — tool execution only. Never imports provider SDKs.
-- Agent Core (`src/agent/`) — orchestration only. Depends on `LLMClient` interface, never a concrete provider.
+- Agent Core (`src/core/`) — orchestration only. Depends on `LLMClient` interface, never a concrete provider.
 - Skill System (`src/skills/`) — SKILL.md parsing and injection only.
 
-**No circular imports.** Dependency direction: `cli → agent → model/tools/skills/state`. Nothing in `model/` imports from `agent/`.
+**No circular imports.** Dependency direction: `cli -> core/providers/tools/skills/state`. Nothing in `providers/` imports from `core/`, and neither imports from `cli/` or `state/` — API keys and config are resolved by the CLI layer and passed as constructor arguments.
 
 **Don't add abstraction for a single use case.** Three similar lines of code is better than a premature helper.
 

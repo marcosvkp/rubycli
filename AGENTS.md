@@ -5,7 +5,7 @@ It must be kept in sync with `CLAUDE.md` — see `docs/engineering-practices.md`
 
 ## Project Overview
 
-OpenCLI — an open-source AI agent CLI that supports Google Gemini and Anthropic Claude models, modeled after Claude Code. The implementation is a working prototype in TypeScript/Node.js (ESM, Node 20+).
+RubyCLI — an AI coding agent CLI powered by RubyCLI Cloud, derived from OpenCLI (MIT). It speaks any OpenAI-compatible endpoint, plus Anthropic and Gemini natively. TypeScript/Node.js (ESM, Node 20+).
 
 ## Getting Started with a Task
 
@@ -26,7 +26,7 @@ npm test                  # Vitest
 npm run test:single       # Vitest verbose (single run)
 ```
 
-API keys are loaded from `.env` (`GEMINI_API_KEY` for Gemini models, `ANTHROPIC_API_KEY` for Claude models). Default model: `gemini-3.1-flash-lite-preview`.
+The RubyCLI key resolves from `RUBY_API_KEY` (legacy alias: `RUBYCLI_API_KEY`), then `~/.rubycli/config.json`, then the first-run prompt. Default model: `ruby-smart` — it must be an id that exists in `GET /v1/models`, because the backend does not publish a router alias. Other providers keep their own env vars (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, …); the table in `providers/registry.ts` is the source of truth.
 
 ## Source Structure
 
@@ -57,7 +57,7 @@ src/
                     #   outbound/mutating tools (bash/write/edit/multi_edit/web_fetch/mcp__*) are forced
                     #   through the gate (same-batch reads arm it pre-dispatch)
     context.ts      # Conversation history, skill content injection, context pruning
-    prompt.ts       # DEFAULT_SYSTEM_INSTRUCTION template + loadSystemInstruction() (OPENCLI_SYSTEM_MD)
+    prompt.ts       # DEFAULT_SYSTEM_INSTRUCTION template + loadSystemInstruction() (RUBYCLI_SYSTEM_MD)
     compact.ts      # compactContext() — LLM-based context compaction for /compact command
     observability.ts # ObservabilityEvent types; token + turn metrics emitted by the agent loop
   providers/      # LLM clients — no CLI/state imports
@@ -90,15 +90,15 @@ src/
     builtin/        # review, commit, explain, debug, test, gh-issue, gh-pr, branch, run-tests, typecheck, lint, new-skill, changelog
   mcp/            # MCP integration — bridges external tool servers into ToolRegistry
     types.ts        # McpStdioServer, McpHttpServer, McpServerConfig, McpConfig, McpToolInfo
-    config.ts       # loadMcpConfig(agentDir) — reads ~/.opencli/mcp.json; expands ${VAR} refs
+    config.ts       # loadMcpConfig(agentDir) — reads ~/.rubycli/mcp.json; expands ${VAR} refs
     client.ts       # McpClient — connects via stdio or HTTP, enforces per-server callTimeout
     adapter.ts      # mcpToolToTool() — wraps one MCP tool as a Tool (name: mcp__server__tool)
     manager.ts      # McpManager — connects all servers in parallel, registers adapters
     index.ts        # Re-exports all public types and classes
   state/
-    config.ts       # ~/.opencli/config.json load/save; exports AGENT_DIR, Config (incl. anthropicApiKey)
-    session.ts      # JSONL session logs at ~/.opencli/projects/<cwd>/; create, list, resume
-    settings.ts     # .opencli/settings.json load/save; holds project-level Permissions (HITL allow/ask/deny list)
+    config.ts       # ~/.rubycli/config.json load/save; exports AGENT_DIR, Config (incl. anthropicApiKey)
+    session.ts      # JSONL session logs at ~/.rubycli/projects/<cwd>/; create, list, resume
+    settings.ts     # .rubycli/settings.json load/save; holds project-level Permissions (HITL allow/ask/deny list)
     snapshot.ts     # SnapshotManager — git stash create/restore for per-session working-tree snapshots
 ```
 
@@ -124,14 +124,14 @@ src/
 
 **Thinking models + `thoughtSignature`**: Gemini thinking models (e.g. `gemini-3.1-*`) require `thoughtSignature` to be captured from each `functionCall` part and echoed back in the corresponding `functionResponse`. This is threaded through `FunctionCallPart` → `FunctionResultPart` → the API request in `gemini.ts`. The Anthropic client ignores this field.
 
-**Skill system**: Skills are `SKILL.md` files (YAML frontmatter + Markdown instructions) injected into the agent context on activation. They follow the [Agent Skills open standard](https://agentskills.io). Discovery priority: project `.opencli/skills/` → project `.agents/skills/` → user `~/.opencli/skills/` → bundled built-ins. Invoke with `/skill-name [args]` or the model calls `activate_skill`. See [`docs/skills.md`](docs/skills.md) for the full authoring guide.
+**Skill system**: Skills are `SKILL.md` files (YAML frontmatter + Markdown instructions) injected into the agent context on activation. They follow the [Agent Skills open standard](https://agentskills.io). Discovery priority: project `.rubycli/skills/` → project `.agents/skills/` → user `~/.rubycli/skills/` → bundled built-ins. Invoke with `/skill-name [args]` or the model calls `activate_skill`. See [`docs/skills.md`](docs/skills.md) for the full authoring guide.
 
 **When adding, removing, or renaming a built-in skill**, update all four places: `docs/skills.md` (built-in table), `docs/architecture.md` (skill list + file tree), and the `builtin/` comment in both `CLAUDE.md` and `AGENTS.md`.
 
 ## Key Conventions
 
 - All tools return `{ success: boolean; output: string; error?: string }`
-- Tools declare `requiresConfirmation?(args) => boolean` on their interface; the executor calls `confirmFn` when it returns true. Bash requires confirmation for any command not in its `SAFE_COMMANDS` allowlist; `write`/`edit`/`multi_edit` require it for paths that (symlink-resolved) escape `process.cwd()`; `read`/`grep` require it for out-of-cwd or credential-basename paths; `glob`/`ls` for out-of-cwd paths (see `src/tools/file/paths.ts`). Under `--yes`, the user's deny rules plus a built-in catastrophic blocklist are still enforced (`createAutoApproveConfirmFn`). Grants (`permissions.allow`) are honoured only from the global user config — project-scoped `.opencli/settings.json` allow entries are ignored as untrusted.
+- Tools declare `requiresConfirmation?(args) => boolean` on their interface; the executor calls `confirmFn` when it returns true. Bash requires confirmation for any command not in its `SAFE_COMMANDS` allowlist; `write`/`edit`/`multi_edit` require it for paths that (symlink-resolved) escape `process.cwd()`; `read`/`grep` require it for out-of-cwd or credential-basename paths; `glob`/`ls` for out-of-cwd paths (see `src/tools/file/paths.ts`). Under `--yes`, the user's deny rules plus a built-in catastrophic blocklist are still enforced (`createAutoApproveConfirmFn`). Grants (`permissions.allow`) are honoured only from the global user config — project-scoped `.rubycli/settings.json` allow entries are ignored as untrusted.
 - `edit` tool requires `old_string` to appear exactly once — fails with a clear error if ambiguous
 - Prettier `printWidth: 100`, double quotes, trailing commas — run `npm run format` before committing
 - ESLint: `@typescript-eslint/recommended` + no unused vars (underscore prefix to suppress)
@@ -159,11 +159,17 @@ npm run typecheck && npm run lint && npm run format:check && npm test
 
 ## Configuration
 
-- `.env` — `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENCLI_MODEL`
-- `OPENCLI_SYSTEM_MD` — path to a Markdown file that overrides the default system instruction (for prompt hill-climbing)
-- `OPENCLI_MAX_TOOL_OUTPUT` — max chars before bash/grep/glob output is middle-truncated (default: 20 000)
-- `~/.opencli/config.json` — persisted user config (model, temperature, historySize, etc.)
-- `~/.opencli/projects/<encoded-cwd>/<session-id>.jsonl` — session conversation logs
+- `.env` — third-party provider keys (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, …). RubyCLI Cloud needs no `.env` entry.
+- `RUBY_API_KEY` — RubyCLI API key (highest priority, never auto-persisted). Legacy alias `RUBYCLI_API_KEY` is also honoured.
+- `RUBYCLI_BASE_URL` / `RUBYCLI_MODEL` / `RUBYCLI_DEBUG=1` — endpoint, model and debug overrides
+- `RUBYCLI_SYSTEM_MD` — path to a Markdown file that overrides the default system instruction (for prompt hill-climbing)
+- `RUBYCLI_MAX_TOOL_OUTPUT` — max chars before bash/grep/glob output is middle-truncated (default: 20 000)
+- `RUBYCLI_SANDBOX`, `RUBYCLI_SNAPSHOT`, `RUBYCLI_WEB_FETCH_ALLOW_PRIVATE` — behaviour toggles
+- `~/.rubycli/config.json` — persisted user config (model, temperature, historySize, etc.)
+- `~/.rubycli/projects/<encoded-cwd>/<session-id>.jsonl` — session conversation logs
+- `~/.rubycli/mcp.json` — MCP server definitions
+
+Every `RUBYCLI_*` variable also accepts its legacy `OPENCLI_*` name, so pre-rename setups keep working.
 - `.gitignore` excludes `.env` and `dist/`
 
 ## Session Management
@@ -171,9 +177,9 @@ npm run typecheck && npm run lint && npm run format:check && npm test
 Sessions are JSONL logs stored globally (not in the project directory):
 
 ```bash
-opencli sessions              # list sessions for current directory
-opencli chat --resume         # resume most recent session with conversation content
-opencli chat --session <id>   # resume a specific session by ID
+ruby sessions                 # list sessions for current directory
+ruby --resume                 # resume the most recent session
+ruby --session <id>           # resume a specific session by ID
 ```
 
 Session ID format: `YYYY-MM-DDTHH-mm-ss` (human-readable, lexicographically sortable).
