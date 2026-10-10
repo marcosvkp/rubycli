@@ -1,8 +1,22 @@
 import { readFile, writeFile, mkdir, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { AGENT_DIR_NAME } from "../rubycli.js";
-export const AGENT_DIR = join(homedir(), AGENT_DIR_NAME);
+import { AGENT_DIR_NAME, DEFAULT_MODEL } from "../rubycli.js";
+
+/**
+ * Root directory for all agent state: config, sessions, goals, MCP config, grants.
+ *
+ * Defaults to `~/.rubycli`, overridable with `RUBYCLI_HOME` (the legacy
+ * `OPENCLI_HOME` is still honoured). The override exists so a user can relocate
+ * their state — onto a synced or encrypted volume, say — and so a test or an
+ * embedder can work in a throwaway directory instead of the real one.
+ */
+function resolveAgentDir(): string {
+  const override = process.env.RUBYCLI_HOME ?? process.env.OPENCLI_HOME;
+  return override ? override : join(homedir(), AGENT_DIR_NAME);
+}
+
+export const AGENT_DIR = resolveAgentDir();
 const CONFIG_FILE = join(AGENT_DIR, "config.json");
 
 export interface Permissions {
@@ -42,7 +56,11 @@ export interface Config {
 }
 
 const DEFAULTS: Config = {
-  model: "ruby-auto",
+  // Must be a real catalog id. This was `ruby-auto`, a router alias the provider
+  // does not publish: a fresh install (no config.json yet) therefore started on a
+  // model that 404s. A user who had configured a model never saw it, which is why
+  // it survived — the default is only reachable when nothing is configured.
+  model: DEFAULT_MODEL,
   temperature: 0.7,
   maxTokens: 8192,
   autoExecute: false,

@@ -13,6 +13,7 @@ vi.mock("node:os", async (importOriginal) => {
 
 // Import after mock is set up
 const { loadConfig, saveConfig } = await import("./config.js");
+const { DEFAULT_MODEL } = await import("../rubycli.js");
 
 afterEach(async () => {
   await rm(tmpHome, { recursive: true, force: true });
@@ -21,7 +22,11 @@ afterEach(async () => {
 describe("loadConfig", () => {
   it("returns defaults when no config file exists", async () => {
     const config = await loadConfig();
-    expect(config.model).toBe("ruby-auto");
+    // The default must be a model the provider actually publishes. It was
+    // `ruby-auto`, a router alias that 404s, so a fresh install broke on its
+    // first turn — invisible to anyone who had already configured a model.
+    expect(config.model).toBe(DEFAULT_MODEL);
+    expect(config.model).not.toBe("ruby-auto");
     expect(config.temperature).toBe(0.7);
     expect(config.historySize).toBe(50);
     expect(config.autoExecute).toBe(false);
