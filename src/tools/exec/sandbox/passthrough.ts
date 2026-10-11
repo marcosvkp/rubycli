@@ -101,13 +101,19 @@ export async function spawnAndCollect(
     const timer = setTimeout(() => {
       timedOut = true;
 
-      // If the shell has already exited, only a backgrounded grandchild is
-      // holding the pipes open. There is nothing left to signal, so the
-      // SIGTERM/SIGKILL grace period would be pure dead time — go straight to
-      // the force-resolve. This is the common shape on Windows, where a
-      // backgrounded child is orphaned the moment the shell exits and cannot be
-      // reached through the parent at all.
-      if (exited) {
+      // When the shell has already exited, only a backgrounded grandchild can be
+      // holding the pipes open.
+      //
+      // On POSIX the process group outlives its leader, so the group kill still
+      // reaches that child and must be attempted — skipping it would leak the
+      // child for its full lifetime.
+      //
+      // On Windows there are no process groups: `process.kill(-pid)` throws and
+      // `taskkill /T` on a dead PID has nothing to walk, so the child is
+      // unreachable and the SIGTERM/SIGKILL grace period would be pure dead time.
+      // Go straight to the force-resolve.
+      const childUnreachable = process.platform === "win32" && exited;
+      if (childUnreachable) {
         stderr.push(
           Buffer.from(
             "\n[rubycli] command timed out; a backgrounded child still holds stdio — detaching.\n",

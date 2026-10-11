@@ -78,7 +78,7 @@ describe("Session.list", () => {
     }
     const sessions = await Session.list(CWD, 2);
     expect(sessions).toHaveLength(2);
-  });
+  }, 20_000); // when the suite's ~80 files are competing for the pool. // only ~1.7s of the default 5s budget for the file I/O around it — not enough // This test intentionally sleeps 3.3s to get distinct mtimes, which leaves
 });
 
 describe("Session.loadMessages", () => {

@@ -125,9 +125,17 @@ export { detectShell, findWindowsBash } from "./tools/exec/sandbox/shell.js";
 export type { ShellSpec } from "./tools/exec/sandbox/shell.js";
 
 // --- MCP --------------------------------------------------------------------
-export { McpManager } from "./mcp/manager.js";
+export { McpManager, probeMcpServer } from "./mcp/manager.js";
+export type { McpServerStatus } from "./mcp/manager.js";
 export { McpClient } from "./mcp/client.js";
-export { loadMcpConfig } from "./mcp/config.js";
+export {
+  loadMcpConfig,
+  saveMcpServer,
+  removeMcpServer,
+  validateMcpServerConfig,
+  isValidMcpServerName,
+  mcpConfigPath,
+} from "./mcp/config.js";
 export { mcpToolToTool } from "./mcp/adapter.js";
 export type { McpClientOpts } from "./mcp/client.js";
 export type { McpConfig, McpServerConfig, McpToolInfo } from "./mcp/types.js";

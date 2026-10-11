@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
+import { join, dirname } from "node:path";
 import type { McpConfig, McpServerConfig } from "./types.js";
 
 const EXPAND_RE = /\$\$\{|\$\{([^}]+)\}/g;
@@ -119,4 +119,78 @@ export async function loadMcpConfig(agentDir: string): Promise<McpConfig | null>
   }
 
   return { mcpServers };
+}
+
+/** Absolute path of the MCP config file for an agent directory. */
+export function mcpConfigPath(agentDir: string): string {
+  return join(agentDir, "mcp.json");
+}
+
+/** Server names must be usable in a tool name, so keep them to the safe set. */
+export function isValidMcpServerName(name: string): boolean {
+  return /^[a-zA-Z0-9_-]+$/.test(name);
+}
+
+/**
+ * Validates a server config coming from a UI.
+ *
+ * Returns a human-readable problem, or null when the config is usable. `loadMcpConfig`
+ * already skips bad entries when reading, but a host writing the file should reject
+ * them up front rather than silently produce a config that will not load.
+ */
+export function validateMcpServerConfig(config: McpServerConfig): string | null {
+  if (config.transport === "http") {
+    if (!config.url?.trim()) return "an HTTP server needs a url";
+    try {
+      new URL(config.url);
+    } catch {
+      return `'${config.url}' is not a valid URL`;
+    }
+    return null;
+  }
+  if (!config.command?.trim()) return "a stdio server needs a command";
+  return null;
+}
+
+/**
+ * Adds or replaces one server in `mcp.json`, creating the file if needed.
+ *
+ * The write is atomic (temp file + rename): a half-written mcp.json would make the
+ * whole MCP config unparseable, taking down every other server with it.
+ */
+export async function saveMcpServer(
+  agentDir: string,
+  name: string,
+  config: McpServerConfig,
+): Promise<void> {
+  if (!isValidMcpServerName(name)) {
+    throw new Error(`'${name}' is not a valid server name (use letters, digits, _ and -)`);
+  }
+  const problem = validateMcpServerConfig(config);
+  if (problem) throw new Error(problem);
+
+  const existing = (await loadMcpConfig(agentDir)) ?? { mcpServers: {} };
+  const next: McpConfig = {
+    mcpServers: { ...existing.mcpServers, [name]: config },
+  };
+  await writeMcpConfig(agentDir, next);
+}
+
+/** Removes one server. Returns false when it was not configured. */
+export async function removeMcpServer(agentDir: string, name: string): Promise<boolean> {
+  const existing = await loadMcpConfig(agentDir);
+  if (!existing || !(name in existing.mcpServers)) return false;
+
+  const remaining = { ...existing.mcpServers };
+  delete remaining[name];
+  await writeMcpConfig(agentDir, { mcpServers: remaining });
+  return true;
+}
+
+async function writeMcpConfig(agentDir: string, config: McpConfig): Promise<void> {
+  const path = mcpConfigPath(agentDir);
+  await mkdir(dirname(path), { recursive: true });
+  const tmp = `${path}.tmp`;
+  await writeFile(tmp, JSON.stringify(config, null, 2) + "\n", "utf8");
+  await rename(tmp, path);
 }
