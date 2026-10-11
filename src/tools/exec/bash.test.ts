@@ -4,6 +4,11 @@ import { PassthroughRunner } from "./sandbox/passthrough.js";
 
 const bashTool = createBashTool(new PassthroughRunner("off"));
 
+/** Escapes a literal string for use inside a RegExp. */
+function escapeRe(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 describe("bashTool.execute", () => {
   it("executes a simple command and returns stdout", async () => {
     const result = await bashTool.execute({ command: "echo hello" });
@@ -25,6 +30,20 @@ describe("bashTool.execute", () => {
   it("respects cwd option inside project root", async () => {
     const result = await bashTool.execute({ command: "pwd", cwd: process.cwd() });
     expect(result.success).toBe(true);
+
+    if (process.platform === "win32") {
+      // On Windows the shell is Git Bash, which reports its own MSYS mount
+      // namespace: `G:\a\b` comes back as `/g/a/b`. The directory is the right one
+      // — only the notation differs — so assert the drive-letter form when the
+      // shell happens to use one, and the MSYS form otherwise.
+      const cwd = process.cwd();
+      const drive = cwd.slice(0, 1).toLowerCase();
+      const rest = cwd.slice(2).replace(/\\/g, "/");
+      const msys = `/${drive}${rest}`;
+      expect(result.output).toMatch(new RegExp(`${escapeRe(cwd)}|${escapeRe(msys)}`, "i"));
+      return;
+    }
+
     expect(result.output).toContain(process.cwd());
   });
 

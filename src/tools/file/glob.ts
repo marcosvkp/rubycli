@@ -2,6 +2,7 @@ import { readdir, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { Tool } from "../base.js";
 import { escapesCwdSync } from "./paths.js";
+import { matchGlob } from "./glob-match.js";
 
 // Cap recursion depth and total entries so a pathological tree (or a symlink
 // cycle that slips past isSymbolicLink) cannot hang or OOM a single call.
@@ -73,20 +74,4 @@ async function walk(dir: string, depth = 0, count = { n: 0 }): Promise<string[]>
     }
   }
   return results;
-}
-
-// Minimal glob matcher supporting **, *, and ? wildcards
-function matchGlob(pattern: string, filePath: string): boolean {
-  const regex = new RegExp(
-    "^" +
-      pattern
-        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-        .replace(/\*\*/g, "§DSTAR§")
-        .replace(/\*/g, "[^/]*")
-        .replace(/\?/g, "[^/]")
-        .replace(/§DSTAR§\//g, "(?:.+/)?")
-        .replace(/§DSTAR§/g, ".*") +
-      "$",
-  );
-  return regex.test(filePath);
 }

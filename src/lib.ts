@@ -119,6 +119,10 @@ export type { JSONSchema, Tool, ToolExecutionContext, ToolRunner } from "./tools
 export type { SpawnSubAgentFn } from "./tools/task/subagent.js";
 export { createSandboxRunner } from "./tools/exec/sandbox/index.js";
 export type { SandboxMode, SandboxRunner } from "./tools/exec/sandbox/types.js";
+// Shell resolution: a host may want to show which shell the agent's commands run
+// in, and it is the thing that was silently wrong on Windows.
+export { detectShell, findWindowsBash } from "./tools/exec/sandbox/shell.js";
+export type { ShellSpec } from "./tools/exec/sandbox/shell.js";
 
 // --- MCP --------------------------------------------------------------------
 export { McpManager } from "./mcp/manager.js";

@@ -1,7 +1,8 @@
 import { readFile, readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { Tool } from "../base.js";
 import { escapesCwdSync, isCredentialPath } from "./paths.js";
+import { matchGlobBasename } from "./glob-match.js";
 
 // Cap recursion depth and total entries to bound a walk through a pathological or
 // symlink-cycled tree. See #300.
@@ -78,10 +79,7 @@ async function collectFiles(dir: string, glob?: string): Promise<string[]> {
   await walk(dir, all);
 
   if (!glob) return all;
-  return all.filter((f) => {
-    const name = f.split("/").pop() ?? "";
-    return matchSimpleGlob(glob, name);
-  });
+  return all.filter((f) => matchGlobBasename(glob, basename(f)));
 }
 
 async function walk(dir: string, out: string[], depth = 0, count = { n: 0 }): Promise<void> {
@@ -97,16 +95,4 @@ async function walk(dir: string, out: string[], depth = 0, count = { n: 0 }): Pr
     if (entry.isDirectory()) await walk(full, out, depth + 1, count);
     else out.push(full);
   }
-}
-
-function matchSimpleGlob(pattern: string, name: string): boolean {
-  const regex = new RegExp(
-    "^" +
-      pattern
-        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-        .replace(/\*/g, ".*")
-        .replace(/\?/g, ".") +
-      "$",
-  );
-  return regex.test(name);
 }

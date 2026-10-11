@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join, relative, isAbsolute } from "node:path";
+import { matchGlob } from "../tools/file/glob-match.js";
 
 const MAX_FILE_CHARS = 50_000;
 const MAX_GLOB_FILES = 20;
@@ -175,19 +176,4 @@ async function walk(dir: string, depth = 0, count = { n: 0 }): Promise<string[]>
     }
   }
   return results;
-}
-
-function matchGlob(pattern: string, filePath: string): boolean {
-  const regex = new RegExp(
-    "^" +
-      pattern
-        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-        .replace(/\*\*/g, "§DSTAR§")
-        .replace(/\*/g, "[^/]*")
-        .replace(/\?/g, "[^/]")
-        .replace(/§DSTAR§\//g, "(?:.+/)?")
-        .replace(/§DSTAR§/g, ".*") +
-      "$",
-  );
-  return regex.test(filePath);
 }
