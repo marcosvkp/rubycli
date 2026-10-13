@@ -1,12 +1,26 @@
 import type { Tool } from "../base.js";
 
 /**
- * Spawns a child agent to handle a delegated prompt and returns its final
- * summary text. Injected by the CLI layer — `tools/` never imports `core/`
- * (see AGENTS.md layer rules), so the tool calls back instead of
- * constructing an `Agent` directly.
+ * Options for a delegated agent. The host validates model availability and
+ * starts the requested role in an isolated environment.
  */
-export type SpawnSubAgentFn = (prompt: string, opts: { maxTurns: number }) => Promise<string>;
+export type SubAgentRole = "explorer" | "worker";
+export type SubAgentReasoningEffort = "low" | "medium" | "high";
+
+export interface SpawnSubAgentOptions {
+  maxTurns: number;
+  title: string;
+  role: SubAgentRole;
+  model?: string;
+  reasoningEffort?: SubAgentReasoningEffort;
+  instructions?: string;
+}
+
+/**
+ * Injected by the host layer — tools never imports core (see AGENTS.md layer
+ * rules), so the tool calls back instead of constructing an Agent directly.
+ */
+export type SpawnSubAgentFn = (prompt: string, opts: SpawnSubAgentOptions) => Promise<string>;
 
 /** Max child turns per task call — bounds cost/latency of each delegation. */
 export const SUBAGENT_MAX_TURNS = 15;
@@ -15,9 +29,8 @@ export const SUBAGENT_MAX_TURNS = 15;
 export const SUBAGENT_MAX_CHARS = 10_000;
 
 /**
- * Creates the `task` tool (explore MVP). The child runs read-only tools only
- * (no writes, no bash, no MCP) so there is no write contention, no snapshot
- * needed, and no recursion (the child registry has no `task`).
+ * Creates the delegation tool. The default role remains a read-only explorer;
+ * the host decides how a worker role is isolated and reviewed.
  *
  * Without a spawn function (e.g. in tests or minimal embeddings) the tool
  * returns a clear error instead of failing silently.
@@ -26,10 +39,10 @@ export function createTaskTool(spawnSubAgent?: SpawnSubAgentFn): Tool {
   return {
     name: "task",
     description:
-      "Delegate an independent codebase-exploration question to a sub-agent with its own context. " +
-      "Use for parallel exploration (e.g. 'how does auth work?', 'find all API endpoints') while you " +
-      "continue other work. The sub-agent is READ-ONLY — it cannot edit files or run commands — " +
-      "and returns a text summary. Do NOT use it for work that requires edits; do that yourself.",
+      "Delegate an independent task to a sub-agent with its own context. Use role 'explorer' for " +
+      "read-only investigation and role 'worker' when implementation in an isolated worktree is " +
+      "needed. You may propose a catalog model, reasoning effort and additional instructions. " +
+      "The host validates the configuration and lets the human review it before launch.",
     parameters: {
       type: "object",
       properties: {
@@ -41,6 +54,25 @@ export function createTaskTool(spawnSubAgent?: SpawnSubAgentFn): Tool {
         maxTurns: {
           type: "number",
           description: `Max sub-agent turns (default ${SUBAGENT_MAX_TURNS}, max 30)`,
+        },
+        title: { type: "string", description: "Short name for the agent shown in the chat" },
+        role: {
+          type: "string",
+          enum: ["explorer", "worker"],
+          description: "Use explorer for read-only work, worker for isolated implementation",
+        },
+        model: {
+          type: "string",
+          description: "Optional exact model id from the available model catalog",
+        },
+        reasoning_effort: {
+          type: "string",
+          enum: ["low", "medium", "high"],
+          description: "Optional reasoning effort, validated against the selected model",
+        },
+        instructions: {
+          type: "string",
+          description: "Optional role guidance, constraints, tool boundaries and output format",
         },
       },
       required: ["prompt"],
@@ -65,7 +97,31 @@ export function createTaskTool(spawnSubAgent?: SpawnSubAgentFn): Tool {
           ? Math.min(Math.max(1, Math.floor(rawTurns)), 30)
           : SUBAGENT_MAX_TURNS;
       try {
-        const summary = await spawnSubAgent(prompt, { maxTurns });
+        const title =
+          typeof params.title === "string" && params.title.trim()
+            ? params.title.trim().slice(0, 120)
+            : prompt.trim().split(/\r?\n/, 1)[0].slice(0, 120);
+        const role = params.role === "worker" ? "worker" : "explorer";
+        const model =
+          typeof params.model === "string" && params.model.trim()
+            ? params.model.trim().slice(0, 160)
+            : undefined;
+        const reasoningEffort =
+          params.reasoning_effort === "low" ||
+          params.reasoning_effort === "medium" ||
+          params.reasoning_effort === "high"
+            ? params.reasoning_effort
+            : undefined;
+        const instructions =
+          typeof params.instructions === "string" ? params.instructions.trim().slice(0, 8000) : "";
+        const summary = await spawnSubAgent(prompt, {
+          maxTurns,
+          title,
+          role,
+          ...(model ? { model } : {}),
+          ...(reasoningEffort ? { reasoningEffort } : {}),
+          ...(instructions ? { instructions } : {}),
+        });
         const trimmed =
           summary.length > SUBAGENT_MAX_CHARS
             ? summary.slice(0, SUBAGENT_MAX_CHARS) + "\n…(truncated)"

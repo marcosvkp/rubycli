@@ -1,6 +1,7 @@
-import { relative } from "node:path";
+import { resolve } from "node:path";
 import type { Tool } from "../base.js";
 import type { SandboxRunner } from "./sandbox/types.js";
+import { escapesCwdSync } from "../file/paths.js";
 
 const TIMEOUT_MS = 30_000;
 
@@ -52,7 +53,8 @@ const SAFE_COMMANDS = [
   /^npm\s+(--version|-v)$/,
 ];
 
-export function createBashTool(runner: SandboxRunner): Tool {
+export function createBashTool(runner: SandboxRunner, workspaceRoot = process.cwd()): Tool {
+  const isolatedWorkspace = resolve(workspaceRoot) !== resolve(process.cwd());
   return {
     name: "bash",
     truncateOutput: true,
@@ -64,22 +66,24 @@ export function createBashTool(runner: SandboxRunner): Tool {
         command: { type: "string", description: "The shell command to execute" },
         cwd: {
           type: "string",
-          description: "Working directory for the command (defaults to process cwd)",
+          description: "Working directory for the command (defaults to the workspace root)",
         },
       },
       required: ["command"],
     },
     requiresConfirmation(args): boolean {
       const cmd = (args.command as string).trim();
-      return !SAFE_COMMANDS.some((p) => p.test(cmd));
+      // A shell command can reference absolute paths regardless of its cwd. A
+      // worker in a separate worktree therefore asks before every command,
+      // including commands that are normally classified as safe reads.
+      return isolatedWorkspace || !SAFE_COMMANDS.some((p) => p.test(cmd));
     },
     async execute({ command, cwd: cwdArg }) {
       const cmd = command as string;
-      const cwd = (cwdArg as string | undefined) ?? process.cwd();
+      const cwd = resolve(workspaceRoot, (cwdArg as string | undefined) ?? workspaceRoot);
 
       // Reject model-specified cwd outside project root
-      const rel = relative(process.cwd(), cwd);
-      if (rel.startsWith("..")) {
+      if (escapesCwdSync(cwd, workspaceRoot)) {
         return {
           success: false,
           output: "",

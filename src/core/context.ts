@@ -14,6 +14,7 @@ export class ContextManager {
   constructor(
     private readonly systemInstructionTemplate = DEFAULT_SYSTEM_INSTRUCTION,
     maxHistoryMessages = 50,
+    private readonly workspaceRoot = process.cwd(),
   ) {
     this.maxHistoryMessages = maxHistoryMessages;
   }
@@ -41,10 +42,10 @@ export class ContextManager {
     }
 
     const rendered = renderSystemInstruction(this.systemInstructionTemplate, {
-      cwd: process.cwd(),
-      tmpDir: this.sessionTmpDir ?? `${process.cwd()}/.rubycli/tmp`,
+      cwd: this.workspaceRoot,
+      tmpDir: this.sessionTmpDir ?? `${this.workspaceRoot}/.rubycli/tmp`,
       tools,
-      gitContext: getGitContext(),
+      gitContext: getGitContext(this.workspaceRoot),
       skillCatalog: this.skillCatalog,
     });
     this.cachedSystemInstruction = rendered;

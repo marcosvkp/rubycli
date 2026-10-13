@@ -14,10 +14,15 @@ import { readFile } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import type { ToolDefinition } from "../providers/types.js";
 
-export function getGitContext(): string {
+export function getGitContext(cwd = process.cwd()): string {
   try {
     const run = (cmd: string) =>
-      execSync(cmd, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], timeout: 3000 }).trim();
+      execSync(cmd, {
+        cwd,
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 3000,
+      }).trim();
 
     const branch = run("git branch --show-current");
     if (!branch) return ""; // detached HEAD — not useful to inject

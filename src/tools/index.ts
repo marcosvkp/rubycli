@@ -10,6 +10,7 @@ export { thinkTool } from "./think.js";
 export { webFetchTool } from "./web/fetch.js";
 export { todoWriteTool, todoReadTool } from "./task/todo.js";
 export { createTaskTool, type SpawnSubAgentFn } from "./task/subagent.js";
+export { createAskUserTool, type AskUserFn } from "./task/ask-user.js";
 export { ToolRegistry } from "./registry.js";
 export type { Tool } from "./base.js";
 
@@ -26,6 +27,8 @@ import { thinkTool } from "./think.js";
 import { webFetchTool } from "./web/fetch.js";
 import { todoWriteTool, todoReadTool } from "./task/todo.js";
 import { createTaskTool, type SpawnSubAgentFn } from "./task/subagent.js";
+import { createAskUserTool, type AskUserFn } from "./task/ask-user.js";
+import { scopeToolToWorkspace } from "./file/workspace.js";
 import { hasNativeThinking } from "../providers/factory.js";
 import { PassthroughRunner } from "./exec/sandbox/passthrough.js";
 import type { SandboxRunner } from "./exec/sandbox/types.js";
@@ -39,24 +42,28 @@ import type { SandboxRunner } from "./exec/sandbox/types.js";
 export function createDefaultRegistry(
   model?: string,
   runner?: SandboxRunner,
-  opts?: { spawnSubAgent?: SpawnSubAgentFn },
+  opts?: {
+    spawnSubAgent?: SpawnSubAgentFn;
+    askUser?: AskUserFn;
+    includeTask?: boolean;
+    workspaceRoot?: string;
+  },
 ): ToolRegistry {
   const registry = new ToolRegistry();
   const effectiveRunner = runner ?? new PassthroughRunner("off");
+  const fileTools = [readTool, writeTool, editTool, multiEditTool, globTool, grepTool, lsTool];
   const tools = [
-    readTool,
-    writeTool,
-    editTool,
-    multiEditTool,
-    globTool,
-    grepTool,
-    lsTool,
-    createBashTool(effectiveRunner),
+    ...(opts?.workspaceRoot
+      ? fileTools.map((tool) => scopeToolToWorkspace(tool, opts.workspaceRoot!))
+      : fileTools),
+    createBashTool(effectiveRunner, opts?.workspaceRoot),
     webFetchTool,
     todoWriteTool,
     todoReadTool,
-    createTaskTool(opts?.spawnSubAgent),
+    createAskUserTool(opts?.askUser),
   ];
+
+  if (opts?.includeTask !== false) tools.push(createTaskTool(opts?.spawnSubAgent));
 
   if (!model || !hasNativeThinking(model)) {
     tools.push(thinkTool);

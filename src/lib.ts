@@ -116,7 +116,19 @@ export type { FetchModelsResult, RemoteModel } from "./providers/catalog.js";
 export { createDefaultRegistry } from "./tools/index.js";
 export { ToolRegistry } from "./tools/registry.js";
 export type { JSONSchema, Tool, ToolExecutionContext, ToolRunner } from "./tools/base.js";
-export type { SpawnSubAgentFn } from "./tools/task/subagent.js";
+export type {
+  SpawnSubAgentFn,
+  SpawnSubAgentOptions,
+  SubAgentReasoningEffort,
+  SubAgentRole,
+} from "./tools/task/subagent.js";
+export type {
+  AskUserFn,
+  UserQuestion,
+  UserQuestionOption,
+  UserQuestionRequest,
+  UserQuestionResult,
+} from "./tools/task/ask-user.js";
 export { createSandboxRunner } from "./tools/exec/sandbox/index.js";
 export type { SandboxMode, SandboxRunner } from "./tools/exec/sandbox/types.js";
 // Shell resolution: a host may want to show which shell the agent's commands run

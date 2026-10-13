@@ -66,6 +66,7 @@ export class Agent {
   private autoCompact: boolean;
   /** Resolved context window, overriding the registry default when the CLI supplied one. */
   private contextWindow: number;
+  private workspaceRoot: string;
   /** Whether the 60% notice has fired this session; resets on clearHistory()
    *  and on successful compaction. */
   private warnedAt60 = false;
@@ -90,11 +91,17 @@ export class Agent {
       /** Scopes the static context-window lookup to one provider's table, so a model
        *  name that also exists under another provider cannot inherit its window. */
       provider?: string;
+      /** Initial effort for a hosted child agent; the CLI may still set it later. */
+      reasoningEffort?: "low" | "medium" | "high";
+      /** Workspace used for prompt context and tool permission containment. */
+      workspaceRoot?: string;
     },
   ) {
-    this.context = new ContextManager(systemInstruction, maxHistoryMessages);
+    this.workspaceRoot = options?.workspaceRoot ?? process.cwd();
+    this.context = new ContextManager(systemInstruction, maxHistoryMessages, this.workspaceRoot);
     this.context.setSkillCatalog(skills.catalogSummary());
     this.model = options?.model ?? "";
+    this.reasoningEffort = options?.reasoningEffort;
     this.obs = options?.onObservability;
     this.snapshotManager = options?.snapshotManager;
     this.compactionClient = options?.compactionClient ?? client;
@@ -213,7 +220,12 @@ export class Agent {
     }
   }
 
-  async *run(userInput: string, mode: AgentRunMode = "react"): AsyncGenerator<AgentEvent> {
+  async *run(
+    userInput: string,
+    mode: AgentRunMode = "react",
+    signal?: AbortSignal,
+  ): AsyncGenerator<AgentEvent> {
+    if (signal?.aborted) return;
     this.context.addMessage({
       role: "user",
       parts: [{ type: "text", text: userInput }],
@@ -258,6 +270,7 @@ export class Agent {
     let untrustedConsumed = false;
 
     while (true) {
+      if (signal?.aborted) return;
       const pendingCalls: FunctionCallPart[] = [];
       let responseText = "";
 
@@ -275,6 +288,7 @@ export class Agent {
       let firstTokenAt: number | undefined;
 
       for await (const event of this.client.stream(messages, systemInstruction, toolDefinitions)) {
+        if (signal?.aborted) return;
         if (event.type === "text") {
           if (firstTokenAt === undefined) firstTokenAt = Date.now();
           responseText += event.text;
@@ -300,6 +314,8 @@ export class Agent {
           if (event.reasoningTokens !== undefined) usageReasoningTokens = event.reasoningTokens;
         }
       }
+
+      if (signal?.aborted) return;
 
       const callEnd = {
         type: "llm_call_end" as const,
@@ -383,9 +399,11 @@ export class Agent {
         forcesConfirmation: this.forcesConfirmationFn,
         obs: this.obs,
         snapshot: this.snapshotManager,
-        cwd: process.cwd(),
+        cwd: this.workspaceRoot,
         untrustedConsumed,
       });
+
+      if (signal?.aborted) return;
 
       // Keep the bump armed for the rest of the turn once any result has
       // delivered untrusted content (#309).
