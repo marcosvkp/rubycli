@@ -115,6 +115,74 @@ describe("Session.loadMessages", () => {
     expect(messages[1]).toEqual({ role: "model", parts: [{ type: "text", text: "4" }] });
   });
 
+  it("returns UI annotations without including them in provider history", async () => {
+    const session = await Session.create(CWD);
+    const event = {
+      version: 1 as const,
+      kind: "user-question" as const,
+      id: "question-1",
+      data: {
+        request: {
+          title: "Pergunta rápida",
+          questions: [
+            {
+              id: "confirm",
+              question: "Continuar?",
+              options: [{ label: "Sim" }, { label: "Não" }],
+            },
+          ],
+        },
+        status: "answered",
+        answers: { confirm: "Sim" },
+      },
+    };
+    await session.log({ type: "user", content: "Pergunte antes de continuar." });
+    await session.log({ type: "assistant", content: "Vou perguntar." });
+    await session.log({
+      type: "tool_call",
+      name: "ask_user",
+      args: { questions: event.data.request.questions },
+    });
+    await session.log({ type: "ui_event", event });
+    await session.log({
+      type: "tool_result",
+      name: "ask_user",
+      result: '{"answers":{"confirm":"Sim"}}',
+    });
+    await session.log({ type: "assistant", content: "Você escolheu Sim." });
+
+    const loaded = await Session.loadMessages(session.id, CWD);
+    expect(loaded.entries.filter((entry) => entry.type === "ui_event")).toHaveLength(1);
+    expect(loaded.entries.find((entry) => entry.type === "ui_event")).toMatchObject({ event });
+    expect(loaded.messages).toEqual([
+      { role: "user", parts: [{ type: "text", text: "Pergunte antes de continuar." }] },
+      { role: "model", parts: [{ type: "text", text: "Vou perguntar." }] },
+      {
+        role: "model",
+        parts: [
+          {
+            type: "function_call",
+            id: "resume-call-1",
+            name: "ask_user",
+            args: { questions: event.data.request.questions },
+          },
+        ],
+      },
+      {
+        role: "user",
+        parts: [
+          {
+            type: "function_result",
+            id: "resume-call-1",
+            name: "ask_user",
+            result: '{"answers":{"confirm":"Sim"}}',
+          },
+        ],
+      },
+      { role: "model", parts: [{ type: "text", text: "Você escolheu Sim." }] },
+    ]);
+  });
+
   it("resumes the latest session with content", async () => {
     // Create an empty session first
     await Session.create(CWD);

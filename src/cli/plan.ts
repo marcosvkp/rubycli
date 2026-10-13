@@ -13,7 +13,8 @@ export async function runPlanFlow(
   session: Session,
   planPrompt: string,
 ): Promise<void> {
-  const planText = await runAgentTurn(agent, session, planPrompt, "plan");
+  const planResult = await runAgentTurn(agent, session, planPrompt, "plan");
+  const planText = planResult.text;
   if (!planText.trim()) return;
 
   const decision = await promptPlanApproval();

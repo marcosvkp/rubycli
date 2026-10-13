@@ -15,7 +15,15 @@ import { runAgentTurn } from "./runner.js";
 import { runPlanFlow } from "./plan.js";
 import type { SnapshotManager } from "../state/snapshot.js";
 import { fetchRemoteModels, remoteContextWindow, type RemoteModel } from "./models.js";
-import { loadGoal, setGoal, setGoalStatus, clearGoal, noteGoal, type Goal } from "../state/goal.js";
+import {
+  blockGoal,
+  loadGoal,
+  setGoal,
+  setGoalMaxRounds,
+  setGoalStatus,
+  clearGoal,
+  type Goal,
+} from "../state/goal.js";
 import { sessionStatus } from "./status-state.js";
 import { activateFooter, releaseFooter, updateFooter } from "./status-footer.js";
 import { createClient, createCompactionClient } from "../providers/factory.js";
@@ -24,6 +32,7 @@ import pkg from "../../package.json";
 import type { ProjectDoc } from "../core/prompt.js";
 import { INIT_DOC_NAME, displayPath, initDocPath } from "./project-doc.js";
 import { gitDiffStat, gitDiffFull, gitBranch } from "./git-info.js";
+import { runAutoGoal } from "../goal/auto.js";
 
 /** Session-scoped connection info the REPL needs for /model switching and /status. */
 export interface ReplConnection {
@@ -51,7 +60,10 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: "model", description: "show or switch the session model (lists API models)" },
   { name: "effort", description: "show or set reasoning effort: low | medium | high" },
   { name: "goal", description: "set, show, pause, resume or clear the session goal" },
-  { name: "auto", description: "toggle auto-mode (keep working without pausing)" },
+  {
+    name: "auto",
+    description: "continue the active goal automatically (bounded by its round limit)",
+  },
   { name: "rewind", description: "undo agent file changes since last snapshot" },
   { name: "undo", description: "remove the last user message and agent response from history" },
   { name: "clear", description: "clear conversation history" },
@@ -524,14 +536,32 @@ export async function runRepl(
         printInfo(g ? "Goal paused." : "No goal set.");
       } else if (goalArg === "resume") {
         const g = await setGoalStatus("active");
-        printInfo(g ? `Goal resumed: ${g.text}` : "No goal set.");
+        printInfo(
+          g
+            ? `Goal resumed: ${g.text} (round counter reset; use /auto on to continue).`
+            : "No goal set.",
+        );
+      } else if (goalArg === "max-rounds" || goalArg.startsWith("max-rounds ")) {
+        const value = Number(goalArg.slice("max-rounds".length).trim());
+        try {
+          const g = await setGoalMaxRounds(value);
+          printInfo(
+            g
+              ? `Goal auto-run limit set to ${g.maxRounds} round(s).${g.status === "blocked" ? " Use /goal resume to unblock it." : ""}`
+              : "No goal set.",
+          );
+        } catch (err) {
+          printError(err instanceof Error ? err.message : String(err));
+        }
       } else if (goalArg === "clear") {
         await clearGoal();
         printInfo("Goal cleared.");
       } else {
         const g = await setGoal(goalArg);
         printInfo(`Goal set: ${g.text}`);
-        printInfo("The agent will keep working toward it until /goal done.");
+        printInfo(
+          `Automatic continuation is off. Use /auto on to continue for up to ${g.maxRounds} rounds; /goal max-rounds <1-100> changes the limit.`,
+        );
       }
       continue;
     }
@@ -547,13 +577,33 @@ export async function runRepl(
       } else if (autoArg === "on" || !autoArg) {
         const g = await loadGoal(cwd);
         if (!g || g.status !== "active") {
-          printInfo("Set a goal first: /goal <what you want to achieve>");
+          printInfo(
+            !g
+              ? "Set a goal first: /goal <what you want to achieve>"
+              : g.status === "blocked"
+                ? "Goal is blocked. Review /goal, then use /goal resume before /auto on."
+                : `Goal is ${g.status}. Use /goal resume before /auto on.`,
+          );
           autoMode = false;
           sessionStatus.autoMode = false;
         } else {
+          if (g.rounds >= g.maxRounds) {
+            const blocked = await blockGoal(
+              `The ${g.maxRounds}-round automatic continuation limit was reached. Review progress and use /goal resume to start a fresh run.`,
+            );
+            autoMode = false;
+            sessionStatus.autoMode = false;
+            printInfo(
+              blocked?.blockedReason ??
+                "Goal is blocked. Review it with /goal, then use /goal resume.",
+            );
+            continue;
+          }
           autoMode = true;
           sessionStatus.autoMode = true;
-          printInfo(`Auto-mode on — working toward: ${g.text}`);
+          printInfo(
+            `Auto-mode on — after your next message, the agent will continue toward the goal for at most ${g.maxRounds - g.rounds} round(s). Use /auto off to disable it.`,
+          );
         }
       } else {
         printError("Usage: /auto [on|off]");
@@ -582,38 +632,32 @@ export async function runRepl(
     }
 
     void session.log({ type: "user", content: userMessage });
-    await runAgentTurn(agent, session, userMessage);
+    const initialTurn = await runAgentTurn(agent, session, userMessage);
+    if (autoMode && initialTurn.errors.length > 0) {
+      const reason =
+        "The last agent turn reported an error. Review the terminal output, then use /goal resume to retry.";
+      await blockGoal(reason, cwd);
+      autoMode = false;
+      sessionStatus.autoMode = false;
+      printInfo(`Automatic continuation stopped and goal blocked: ${reason}`);
+    }
 
-    // Auto-mode: keep going toward the active goal without waiting for input.
-    // Each iteration re-presents the goal with accumulated progress; the loop
-    // stops when the goal is done/paused/cleared, or on turn errors.
-    while (autoMode) {
-      const g = await loadGoal(cwd);
-      if (!g || g.status !== "active") {
-        autoMode = false;
-        sessionStatus.autoMode = false;
+    if (autoMode) {
+      const result = await runAutoGoal({
+        cwd,
+        runTurn: (prompt) => runAgentTurn(agent, session, prompt),
+      });
+      autoMode = false;
+      sessionStatus.autoMode = false;
+      if (result.status === "completed") {
+        printInfo(`Goal completed: ${result.goal?.text ?? ""}`);
+      } else if (result.status === "blocked") {
+        printInfo(`Goal blocked: ${result.reason ?? result.goal?.blockedReason ?? "review /goal"}`);
+      } else if (result.status === "paused") {
+        printInfo("Automatic continuation paused. Use /goal resume and /auto on to continue.");
+      } else {
         printInfo("Auto-mode stopped — no active goal.");
-        break;
       }
-      const followUp =
-        `Continue working toward the goal: ${g.text}\n` +
-        (g.notes.length > 0 ? `Progress so far:\n- ${g.notes.join("\n- ")}\n` : "") +
-        `If the goal is fully achieved, reply with exactly: GOAL_DONE and nothing else.`;
-      const result = await runAgentTurn(agent, session, followUp);
-      if (/^\s*GOAL_DONE\b/.test(result)) {
-        await setGoalStatus("complete");
-        autoMode = false;
-        sessionStatus.autoMode = false;
-        printInfo(`Goal completed: ${g.text}`);
-        break;
-      }
-      if (/maximum iterations|identical tool calls/i.test(result)) {
-        autoMode = false;
-        sessionStatus.autoMode = false;
-        printInfo("Auto-mode stopped — the last turn hit a guard. Review and resume with /auto.");
-        break;
-      }
-      await noteGoal(result.slice(0, 500));
     }
   }
 
@@ -725,13 +769,23 @@ function printGoal(g: Goal): void {
       ? chalk.green("active")
       : g.status === "paused"
         ? chalk.yellow("paused")
-        : chalk.dim("complete");
+        : g.status === "blocked"
+          ? chalk.red("blocked")
+          : chalk.dim("complete");
   process.stderr.write(`${chalk.bold("Goal")} [${status}]: ${g.text}\n`);
+  process.stderr.write(
+    chalk.dim(
+      `  auto rounds: ${g.rounds}/${g.maxRounds}${g.status === "blocked" ? " · resume required" : ""}\n`,
+    ),
+  );
+  if (g.blockedReason) process.stderr.write(chalk.yellow(`  stopped: ${g.blockedReason}\n`));
   if (g.notes.length > 0) {
     process.stderr.write(chalk.dim(`  notes: ${g.notes.length}\n`));
   }
   process.stderr.write(
-    chalk.dim("  /goal <text> set · /goal done|pause|resume|clear · /auto to keep working\n"),
+    chalk.dim(
+      "  /goal <text> set · /goal max-rounds <1-100> · /goal done|pause|resume|clear · /auto [on|off]\n",
+    ),
   );
 }
 

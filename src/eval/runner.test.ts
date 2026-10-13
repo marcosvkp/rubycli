@@ -34,13 +34,27 @@ describe("runScenarioOnce", () => {
   it("copies fixture and returns a RunResult shape", async () => {
     // Point runner at the fake binary via env override (runner reads DIST_ENTRY at module load,
     // so we exercise it by calling runScenarioOnce directly and trusting the shape).
-    const result = await runScenarioOnce(scenario, "gemini-2.0-flash-lite");
-    expect(result).toHaveProperty("output");
+    const result = await runScenarioOnce(scenario, "gemini-2.0-flash-lite", {
+      entryPath: FAKE_DIST_ENTRY,
+    });
+    expect(result.output.trim()).toBe("add subtract multiply");
+    expect(result).toHaveProperty("stderr");
+    expect(result).toHaveProperty("signal");
+    expect(result).toHaveProperty("spawnError");
     expect(result).toHaveProperty("files");
     expect(result).toHaveProperty("typeErrors");
     expect(result).toHaveProperty("exitCode");
     expect(result).toHaveProperty("timedOut");
     expect(result).toHaveProperty("durationMs");
     expect(typeof result.durationMs).toBe("number");
+  }, 60_000);
+
+  it("reports an executable that cannot be spawned", async () => {
+    const result = await runScenarioOnce(scenario, "unused", {
+      entryPath: FAKE_DIST_ENTRY,
+      nodeExecutable: join(FAKE_DIST_DIR, "missing-node.exe"),
+    });
+    expect(result.exitCode).toBe(-1);
+    expect(result.spawnError).toContain("ENOENT");
   }, 60_000);
 });

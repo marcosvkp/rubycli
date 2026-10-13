@@ -335,6 +335,8 @@ src/tools/
                        re-exports all public types and classes.
   task/
     todo.ts        todo_write + todo_read — structured task list for multi-step work.
+    workflow.ts    Restricted agent workflow DSL, bounded parallel/pipeline execution,
+                   host-owned worker approval/worktree callbacks, JSON Schema result validation.
   web/
     fetch.ts       web_fetch — HTTP GET with content extraction.
 ```

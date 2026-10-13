@@ -11,6 +11,28 @@ export { webFetchTool } from "./web/fetch.js";
 export { todoWriteTool, todoReadTool } from "./task/todo.js";
 export { createTaskTool, type SpawnSubAgentFn } from "./task/subagent.js";
 export { createAskUserTool, type AskUserFn } from "./task/ask-user.js";
+export {
+  agent,
+  parallel,
+  pipeline,
+  phase,
+  log,
+  parseWorkflowScript,
+  executeWorkflow,
+  createWorkflowTool,
+} from "./task/workflow.js";
+export type {
+  WorkflowAgentConfig,
+  WorkflowAgentRequest,
+  WorkflowAgentRunner,
+  WorkflowWorkerApproval,
+  WorkflowResultSchema,
+  WorkflowStep,
+  WorkflowEvent,
+  WorkflowRunOptions,
+  WorkflowRunResult,
+  CreateWorkflowToolOptions,
+} from "./task/workflow.js";
 export { ToolRegistry } from "./registry.js";
 export type { Tool } from "./base.js";
 
@@ -28,6 +50,7 @@ import { webFetchTool } from "./web/fetch.js";
 import { todoWriteTool, todoReadTool } from "./task/todo.js";
 import { createTaskTool, type SpawnSubAgentFn } from "./task/subagent.js";
 import { createAskUserTool, type AskUserFn } from "./task/ask-user.js";
+import { createWorkflowTool, type CreateWorkflowToolOptions } from "./task/workflow.js";
 import { scopeToolToWorkspace } from "./file/workspace.js";
 import { hasNativeThinking } from "../providers/factory.js";
 import { PassthroughRunner } from "./exec/sandbox/passthrough.js";
@@ -45,6 +68,7 @@ export function createDefaultRegistry(
   opts?: {
     spawnSubAgent?: SpawnSubAgentFn;
     askUser?: AskUserFn;
+    workflow?: CreateWorkflowToolOptions;
     includeTask?: boolean;
     workspaceRoot?: string;
   },
@@ -64,6 +88,7 @@ export function createDefaultRegistry(
   ];
 
   if (opts?.includeTask !== false) tools.push(createTaskTool(opts?.spawnSubAgent));
+  if (opts?.workflow) tools.push(createWorkflowTool(opts.workflow));
 
   if (!model || !hasNativeThinking(model)) {
     tools.push(thinkTool);

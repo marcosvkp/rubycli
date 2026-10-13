@@ -5,11 +5,16 @@ export interface UserQuestionOption {
   description?: string;
 }
 
+export type UserQuestionSelectionMode = "single" | "multiple";
+export type UserQuestionAnswer = string | string[];
+
 export interface UserQuestion {
   id: string;
   header?: string;
   question: string;
   options: UserQuestionOption[];
+  /** Multiple questions are presented one per page. Omitted means single choice. */
+  selectionMode?: UserQuestionSelectionMode;
 }
 
 export interface UserQuestionRequest {
@@ -18,7 +23,7 @@ export interface UserQuestionRequest {
 }
 
 export interface UserQuestionResult {
-  answers: Record<string, string>;
+  answers: Record<string, UserQuestionAnswer>;
   cancelled: boolean;
 }
 
@@ -32,25 +37,47 @@ export function createAskUserTool(askUser?: AskUserFn): Tool {
     readonly: true,
     description:
       "Ask the human a structured clarification question when a decision blocks progress. " +
-      "Ask only what is needed, in one batch of at most three questions. Include concise options " +
-      "when useful; the human can also enter a custom answer. Wait for the result before proceeding.",
+      "Ask only what is needed, in one batch of one to three questions; each question is shown " +
+      "as its own page. Include concise options as objects with a label and optional description. " +
+      "Set selectionMode to 'multiple' when the human may choose more than one option; otherwise " +
+      "omit it or use 'single'. A multiple-choice answer is returned as an array. The human can " +
+      "also enter a custom answer. Wait for the result before proceeding.",
     parameters: {
       type: "object",
       properties: {
         title: { type: "string", description: "Short heading for the question card" },
         questions: {
           type: "array",
-          description: "One to three questions for the human",
+          description: "One to three questions for the human, shown one per page",
           items: {
             type: "object",
             properties: {
               id: { type: "string", description: "Stable id for the answer in this batch" },
               header: { type: "string", description: "Short label shown above the question" },
               question: { type: "string", description: "The question to ask" },
+              selectionMode: {
+                type: "string",
+                enum: ["single", "multiple"],
+                description:
+                  "Whether the human can select one option or multiple options; defaults to single",
+              },
               options: {
                 type: "array",
-                description: "Optional selectable answers; custom text is always allowed",
-                items: { type: "string" },
+                description: "Optional selectable answers. Custom text is also allowed in the UI.",
+                items: {
+                  type: "object",
+                  properties: {
+                    label: {
+                      type: "string",
+                      description: "Short text shown on the selectable answer",
+                    },
+                    description: {
+                      type: "string",
+                      description: "Optional explanation shown beside the answer",
+                    },
+                  },
+                  required: ["label"],
+                },
               },
             },
             required: ["question"],
@@ -91,12 +118,32 @@ export function createAskUserTool(askUser?: AskUserFn): Tool {
         const rawOptions = record.options;
         const options = Array.isArray(rawOptions)
           ? rawOptions
-              .filter((option): option is string => typeof option === "string")
+              .flatMap((option): UserQuestionOption[] => {
+                if (typeof option === "string") {
+                  const label = option.trim();
+                  return label ? [{ label: label.slice(0, 160) }] : [];
+                }
+                if (!option || typeof option !== "object" || Array.isArray(option)) return [];
+                const optionRecord = option as Record<string, unknown>;
+                if (typeof optionRecord.label !== "string") return [];
+                const label = optionRecord.label.trim();
+                if (!label) return [];
+                const description =
+                  typeof optionRecord.description === "string"
+                    ? optionRecord.description.trim().slice(0, 300)
+                    : "";
+                return [
+                  {
+                    label: label.slice(0, 160),
+                    ...(description ? { description } : {}),
+                  },
+                ];
+              })
               .slice(0, 8)
-              .map((label) => ({ label: label.slice(0, 160) }))
           : [];
         const id = record.id;
         const header = record.header;
+        const selectionMode = record.selectionMode === "multiple" ? "multiple" : undefined;
         const baseId = typeof id === "string" && id.trim() ? id.slice(0, 80) : "q" + (index + 1);
         let uniqueId = baseId;
         let suffix = 2;
@@ -107,6 +154,7 @@ export function createAskUserTool(askUser?: AskUserFn): Tool {
           ...(typeof header === "string" && header.trim() ? { header: header.slice(0, 80) } : {}),
           question: question.trim().slice(0, 3000),
           options,
+          ...(selectionMode ? { selectionMode } : {}),
         });
       }
 

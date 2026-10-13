@@ -129,6 +129,28 @@ export type {
   UserQuestionRequest,
   UserQuestionResult,
 } from "./tools/task/ask-user.js";
+export {
+  agent,
+  parallel,
+  pipeline,
+  phase,
+  log,
+  parseWorkflowScript,
+  executeWorkflow,
+  createWorkflowTool,
+} from "./tools/task/workflow.js";
+export type {
+  WorkflowAgentConfig,
+  WorkflowAgentRequest,
+  WorkflowAgentRunner,
+  WorkflowWorkerApproval,
+  WorkflowResultSchema,
+  WorkflowStep,
+  WorkflowEvent,
+  WorkflowRunOptions,
+  WorkflowRunResult,
+  CreateWorkflowToolOptions,
+} from "./tools/task/workflow.js";
 export { createSandboxRunner } from "./tools/exec/sandbox/index.js";
 export type { SandboxMode, SandboxRunner } from "./tools/exec/sandbox/types.js";
 // Shell resolution: a host may want to show which shell the agent's commands run
@@ -158,9 +180,32 @@ export type { SkillEntry } from "./skills/registry.js";
 
 // --- State: sessions, goals, snapshots, settings ----------------------------
 export { Session } from "./state/session.js";
-export type { SessionEntry, SessionSummary } from "./state/session.js";
-export { loadGoal, setGoal, noteGoal, setGoalStatus, clearGoal } from "./state/goal.js";
+export type {
+  SessionEntry,
+  SessionLogEntry,
+  SessionSummary,
+  SessionUiEvent,
+} from "./state/session.js";
+export {
+  DEFAULT_GOAL_MAX_ROUNDS,
+  MAX_GOAL_ROUNDS,
+  loadGoal,
+  setGoal,
+  noteGoal,
+  recordGoalRound,
+  setGoalMaxRounds,
+  setGoalStatus,
+  blockGoal,
+  clearGoal,
+} from "./state/goal.js";
 export type { Goal, GoalStatus } from "./state/goal.js";
+export { runAutoGoal } from "./goal/auto.js";
+export type {
+  AutoGoalTurnResult,
+  AutoGoalStopStatus,
+  AutoGoalRunResult,
+  AutoGoalRunOptions,
+} from "./goal/auto.js";
 export { SnapshotManager } from "./state/snapshot.js";
 export type { RewindResult } from "./state/snapshot.js";
 export { loadSettings, saveSettings } from "./state/settings.js";

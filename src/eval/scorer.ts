@@ -7,8 +7,11 @@ export interface ScoreResult {
 }
 
 export function scoreScenario(scenario: Scenario, result: RunResult): ScoreResult {
-  if (result.timedOut) return { score: "fail", reason: "timed out after 120s" };
-  if (result.exitCode !== 0 && scenario.category !== "read-explain") {
+  if (result.timedOut) return { score: "fail", reason: "agent timed out after 240s" };
+  if (result.spawnError) {
+    return { score: "fail", reason: "agent process could not start: " + result.spawnError };
+  }
+  if (result.exitCode !== 0) {
     return { score: "fail", reason: `agent exited with code ${result.exitCode}` };
   }
 

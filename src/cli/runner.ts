@@ -21,12 +21,13 @@ export async function runAgentTurn(
   session: Session,
   userMessage: string,
   mode: AgentRunMode = "react",
-): Promise<string> {
+): Promise<{ text: string; errors: string[] }> {
   const spinner = createSpinner();
   spinner.start();
   const mdRenderer = new MarkdownStreamRenderer();
   const pendingEdits: { file_path: string; old_string: string; new_string: string }[] = [];
   let fullText = "";
+  const errors: string[] = [];
   let turnText = "";
   // Turn-level metrics aggregation (sums across all LLM calls this turn).
   let turnInput = 0;
@@ -119,6 +120,7 @@ export async function runAgentTurn(
         case "error":
           spinner.stop();
           mdRenderer.flush();
+          errors.push(event.message);
           printError(event.message);
           break;
 
@@ -189,10 +191,11 @@ export async function runAgentTurn(
   } catch (err) {
     spinner.stop();
     const message = err instanceof Error ? err.message : String(err);
+    errors.push(message);
     printError(message);
   }
 
-  return fullText;
+  return { text: fullText, errors };
 }
 
 // Varied verbs shown while waiting on the model or tool execution — picked

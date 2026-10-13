@@ -8,10 +8,10 @@ export default defineConfig({
       exclude: [
         "src/cli/**",
         "*.config.ts",
-        "src/model/types.ts",
+        "src/providers/types.ts",
         "src/tools/base.ts",
         "src/tools/index.ts",
-        "src/agent/core.ts",
+        "src/core/agent.ts",
       ],
       thresholds: {
         lines: 70,

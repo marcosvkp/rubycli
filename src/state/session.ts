@@ -284,6 +284,11 @@ export type SessionEntry =
   | { type: "user"; timestamp: string; content: string }
   | { type: "assistant"; timestamp: string; content: string }
   | {
+      type: "ui_event";
+      timestamp: string;
+      event: SessionUiEvent;
+    }
+  | {
       type: "tool_call";
       timestamp: string;
       name: string;
@@ -296,7 +301,19 @@ export type SessionEntry =
     }
   | { type: "tool_result"; timestamp: string; name: string; result: string };
 
-type WithoutTimestamp<T> = T extends unknown ? Omit<T, "timestamp"> : never;
+/** A versioned, host-owned transcript annotation that is excluded from provider history. */
+export interface SessionUiEvent {
+  version: 1;
+  kind: "subagent-config" | "subagent" | "user-question";
+  id: string;
+  data: Record<string, unknown>;
+}
+
+export type SessionLogEntry = SessionEntry extends infer Entry
+  ? Entry extends { timestamp: string }
+    ? Omit<Entry, "timestamp">
+    : never
+  : never;
 
 export interface SessionSummary {
   id: string;
@@ -355,7 +372,7 @@ export class Session {
   static async loadMessages(
     id: string,
     cwd: string = process.cwd(),
-  ): Promise<{ session: Session; messages: Message[] }> {
+  ): Promise<{ session: Session; messages: Message[]; entries: SessionEntry[] }> {
     const dir = await sessionProjectDir(cwd);
 
     let sessionId = id;
@@ -402,15 +419,16 @@ export class Session {
     return {
       session: new Session(sessionId, cwd, logPath),
       messages: reconstructMessages(entries),
+      entries,
     };
   }
 
-  async log(entry: WithoutTimestamp<SessionEntry>): Promise<void> {
+  async log(entry: SessionLogEntry): Promise<void> {
     try {
       // Redact high-confidence secrets in the entry's string VALUES before
       // serialising — never on the finished JSON line, which corrupts the JSON and
       // misses escape-mangled values (see redactStringsDeep). See GHSA-x245-5r32-45m5.
-      const redacted = redactStringsDeep(entry) as WithoutTimestamp<SessionEntry>;
+      const redacted = redactStringsDeep(entry) as SessionLogEntry;
       const line = JSON.stringify({ ...redacted, timestamp: new Date().toISOString() }) + "\n";
       await appendFile(this.logPath, line, "utf8");
     } catch {

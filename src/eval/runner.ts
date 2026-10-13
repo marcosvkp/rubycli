@@ -23,11 +23,21 @@ export const CLI_BUILT = existsSync(DIST_ENTRY);
 
 export interface RunResult {
   output: string;
+  stderr: string;
   files: Record<string, string | null>;
   typeErrors: string | null;
   exitCode: number;
+  signal: string | null;
+  spawnError: string | null;
   timedOut: boolean;
   durationMs: number;
+}
+
+export interface RunScenarioOptions {
+  /** Override the built CLI entry point for deterministic runner tests. */
+  entryPath?: string;
+  /** Override the Node executable for deterministic spawn-error tests. */
+  nodeExecutable?: string;
 }
 
 export async function runScenario(
@@ -45,41 +55,84 @@ export async function runScenario(
   throw new Error("unreachable");
 }
 
-/** Spawn a process and capture stdout, resolving when it exits or the signal fires. */
+/** Spawn a process and settle on close or spawn error, including on Windows. */
 function spawnAsync(
   cmd: string,
   args: string[],
   opts: { cwd: string; env: NodeJS.ProcessEnv; signal: AbortSignal },
-): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut: boolean }> {
+): Promise<{
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  signal: string | null;
+  spawnError: string | null;
+  timedOut: boolean;
+}> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
       env: opts.env,
       stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
     });
 
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
-    child.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
+    child.stdout?.on("data", (data: Buffer) => (stdout += data.toString()));
+    child.stderr?.on("data", (data: Buffer) => (stderr += data.toString()));
 
     let timedOut = false;
-    const onAbort = () => {
-      timedOut = true;
-      child.kill("SIGTERM");
-      // Give it 5 s to exit cleanly, then SIGKILL
-      setTimeout(() => child.kill("SIGKILL"), 5_000).unref();
-    };
-    opts.signal.addEventListener("abort", onAbort, { once: true });
-
-    child.once("close", (code) => {
+    let settled = false;
+    let killTimer: NodeJS.Timeout | undefined;
+    const finish = (result: {
+      exitCode: number;
+      signal: string | null;
+      spawnError: string | null;
+    }): void => {
+      if (settled) return;
+      settled = true;
+      if (killTimer) clearTimeout(killTimer);
       opts.signal.removeEventListener("abort", onAbort);
-      resolve({ stdout, stderr, exitCode: code ?? -1, timedOut });
+      resolve({ stdout, stderr, timedOut, ...result });
+    };
+    const onAbort = (): void => {
+      timedOut = true;
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // The process may already have exited while the timeout was queued.
+      }
+      killTimer = setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // The process may already have exited.
+        }
+      }, 5_000);
+      killTimer.unref();
+    };
+
+    opts.signal.addEventListener("abort", onAbort, { once: true });
+    child.once("error", (error) => {
+      stderr += error.message;
+      finish({ exitCode: -1, signal: null, spawnError: error.message });
+    });
+    child.once("close", (code, exitSignal) => {
+      finish({
+        exitCode: code ?? -1,
+        signal: exitSignal ?? null,
+        spawnError: null,
+      });
     });
   });
 }
-
-export async function runScenarioOnce(scenario: Scenario, model: string): Promise<RunResult> {
+export async function runScenarioOnce(
+  scenario: Scenario,
+  model: string,
+  options: RunScenarioOptions = {},
+): Promise<RunResult> {
+  const entryPath = options.entryPath ?? DIST_ENTRY;
+  const nodeExecutable = options.nodeExecutable ?? process.execPath;
   const tmpDir = join(
     tmpdir(),
     `opencli-eval-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -98,7 +151,7 @@ export async function runScenarioOnce(scenario: Scenario, model: string): Promis
     }
 
     const cliArgs = [
-      DIST_ENTRY,
+      entryPath,
       "run",
       scenario.prompt,
       "--model",
@@ -115,7 +168,7 @@ export async function runScenarioOnce(scenario: Scenario, model: string): Promis
     const timer = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
 
     const start = Date.now();
-    const proc = await spawnAsync("node", cliArgs, {
+    const proc = await spawnAsync(nodeExecutable, cliArgs, {
       cwd: tmpDir,
       env: process.env,
       signal: controller.signal,
@@ -150,9 +203,12 @@ export async function runScenarioOnce(scenario: Scenario, model: string): Promis
 
     return {
       output: proc.stdout,
+      stderr: proc.stderr,
       files,
       typeErrors,
       exitCode: proc.exitCode,
+      signal: proc.signal,
+      spawnError: proc.spawnError,
       timedOut: proc.timedOut,
       durationMs,
     };

@@ -9,6 +9,9 @@ function makeResult(overrides: Partial<RunResult> = {}): RunResult {
     files: {},
     typeErrors: null,
     exitCode: 0,
+    signal: null,
+    spawnError: null,
+    stderr: "",
     timedOut: false,
     durationMs: 1000,
     ...overrides,
@@ -35,7 +38,7 @@ describe("scoreScenario — timeout", () => {
 });
 
 describe("scoreScenario — non-zero exit", () => {
-  it("fails on non-zero exit for code-modifying category", () => {
+  it("fails on non-zero exit for every category", () => {
     const { score } = scoreScenario(
       makeScenario({ category: "bug-fix" }),
       makeResult({ exitCode: 1 }),
@@ -43,13 +46,25 @@ describe("scoreScenario — non-zero exit", () => {
     expect(score).toBe("fail");
   });
 
-  it("does not fail on non-zero exit for read-explain", () => {
+  it("fails when read-explain exits non-zero", () => {
     const { score } = scoreScenario(
       makeScenario({ category: "read-explain", expected: { outputKeywords: ["add"] } }),
       makeResult({ exitCode: 1, output: "add subtract multiply" }),
     );
-    expect(score).toBe("pass");
+    expect(score).toBe("fail");
   });
+});
+
+it("fails clearly when the agent process could not start", () => {
+  const { score, reason } = scoreScenario(
+    makeScenario(),
+    makeResult({
+      exitCode: -1,
+      spawnError: "spawn node.exe ENOENT",
+    }),
+  );
+  expect(score).toBe("fail");
+  expect(reason).toContain("could not start");
 });
 
 describe("scoreScenario — tsc gate", () => {
