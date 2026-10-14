@@ -69,6 +69,7 @@ export async function runAgentTurn(
           mdRenderer.flush();
           void session.log({
             type: "tool_call",
+            id: event.id,
             name: event.name,
             args: event.args,
             ...(event.thoughtSignature ? { thoughtSignature: event.thoughtSignature } : {}),
@@ -95,7 +96,12 @@ export async function runAgentTurn(
 
         case "tool_result":
           spinner.stop();
-          void session.log({ type: "tool_result", name: event.name, result: event.result });
+          void session.log({
+            type: "tool_result",
+            id: event.id,
+            name: event.name,
+            result: event.result,
+          });
           if (COMPACT_TOOLS.has(event.name)) {
             printToolResultCompact(event.name, event.result);
           } else if (event.name === "edit") {

@@ -123,13 +123,16 @@ export async function createConfirmFn(): Promise<ConfirmBundle> {
     process.stderr.write(chalk.dim(`     ${detail}\n`));
 
     const isMcp = toolName.startsWith("mcp__");
+    const neverRemember = matchesNeverAutoApprove(toolName, args);
     const keys = grantKeysFor(toolName, args);
-    const options: Array<{ key: string; label: string }> = [
-      { key: "y", label: "Yes, run once" },
-      { key: "p", label: "Yes, always for this project  (~/.rubycli/project-permissions/)" },
-      { key: "g", label: "Yes, always globally          (~/.rubycli/config.json)" },
-    ];
-    if (isMcp) {
+    const options: Array<{ key: string; label: string }> = [{ key: "y", label: "Yes, run once" }];
+    if (!neverRemember) {
+      options.push(
+        { key: "p", label: "Yes, always for this project  (~/.rubycli/project-permissions/)" },
+        { key: "g", label: "Yes, always globally          (~/.rubycli/config.json)" },
+      );
+    }
+    if (isMcp && !neverRemember) {
       options.push({ key: "t", label: "Yes, always for this tool, any args  (project)" });
       if (keys.mcpServerWide) {
         const server = toolName.match(/^mcp__(.+?)__/)?.[1];
@@ -144,6 +147,8 @@ export async function createConfirmFn(): Promise<ConfirmBundle> {
     const choice = await selectKey(`Allow ${toolName}?`, options);
 
     if (choice === null || choice === "n") return "deny";
+    // The blocklist may be overridden once by a person, never persisted as a grant.
+    if (neverRemember) return choice === "y" ? "allow" : "deny";
 
     if (choice === "p") {
       await persistProjectAllow(keys.exact);

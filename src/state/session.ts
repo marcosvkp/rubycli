@@ -160,8 +160,8 @@ async function readFirstUserMessage(logPath: string): Promise<string> {
  *
  * We group consecutive tool_calls into the model message that requested them,
  * and consecutive tool_results into the user message that delivers them back.
- * Synthetic IDs are assigned sequentially so each FunctionCallPart/FunctionResultPart
- * pair is consistent (Gemini requires matching IDs but doesn't validate them on replay).
+ * Provider call IDs are preserved when present; legacy JSONL records get synthetic IDs so
+ * each FunctionCallPart/FunctionResultPart pair remains consistent.
  */
 function reconstructMessages(entries: SessionEntry[]): Message[] {
   const messages: Message[] = [];
@@ -170,9 +170,9 @@ function reconstructMessages(entries: SessionEntry[]): Message[] {
   // Pending batches accumulate until we know where they belong
   let pendingCalls: FunctionCallPart[] = [];
   let pendingResults: FunctionResultPart[] = [];
-  // Queue of pending calls' (id, signature) pairs waiting for their matching
-  // results. The id pair is required by Anthropic's tool_use_id contract; the
-  // signature is needed so Gemini thinking-model functionResponse can echo it.
+  // Pending calls wait for matching results. New logs preserve provider IDs and
+  // older JSONL records fall back to FIFO. The signature is needed so Gemini
+  // thinking-model functionResponse can echo it.
   let pendingCallMeta: { id: string; thoughtSignature?: string }[] = [];
 
   function flushCalls(): void {
@@ -198,7 +198,7 @@ function reconstructMessages(entries: SessionEntry[]): Message[] {
     } else if (entry.type === "tool_call") {
       // New tool_call batch: if there were results from a previous round, flush them first
       flushResults();
-      const id = `resume-call-${++idCounter}`;
+      const id = entry.id ?? `resume-call-${++idCounter}`;
       pendingCallMeta.push({ id, thoughtSignature: entry.thoughtSignature });
       pendingCalls.push({
         type: "function_call",
@@ -216,7 +216,17 @@ function reconstructMessages(entries: SessionEntry[]): Message[] {
         );
         continue;
       }
-      const meta = pendingCallMeta.shift()!;
+      const matchingIndex = entry.id
+        ? pendingCallMeta.findIndex((call) => call.id === entry.id)
+        : 0;
+      if (matchingIndex < 0) {
+        process.stderr.write(
+          `[rubycli] warn: tool_result id did not match a pending tool_call for "${entry.name}" — skipping\n`,
+        );
+        continue;
+      }
+      const [meta] = pendingCallMeta.splice(matchingIndex, 1);
+      if (!meta) continue;
       pendingResults.push({
         type: "function_result",
         id: meta.id,
@@ -291,6 +301,8 @@ export type SessionEntry =
   | {
       type: "tool_call";
       timestamp: string;
+      /** Provider call ID for precise transcript pairing; absent in older JSONL. */
+      id?: string;
       name: string;
       args: Record<string, unknown>;
       // Gemini thinking-model signature for the originating functionCall.
@@ -299,7 +311,14 @@ export type SessionEntry =
       // and the matching FunctionResultPart.
       thoughtSignature?: string;
     }
-  | { type: "tool_result"; timestamp: string; name: string; result: string };
+  | {
+      type: "tool_result";
+      timestamp: string;
+      /** Provider call ID for precise transcript pairing; absent in older JSONL. */
+      id?: string;
+      name: string;
+      result: string;
+    };
 
 /** A versioned, host-owned transcript annotation that is excluded from provider history. */
 export interface SessionUiEvent {

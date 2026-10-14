@@ -233,6 +233,18 @@ describe("decideConfirmation", () => {
     );
   });
 
+  it("does not let a tool-wide grant auto-approve catastrophic commands", () => {
+    expect(decideConfirmation(new Set(["bash:*"]), [], "bash", { command: "rm -rf /" }, true)).toBe(
+      "ask",
+    );
+  });
+
+  it("does not let an exact grant auto-approve catastrophic commands", () => {
+    const args = { command: "rm -rf /" };
+    const exactKey = `bash:${JSON.stringify(args)}`;
+    expect(decideConfirmation(new Set([exactKey]), [], "bash", args, true)).toBe("ask");
+  });
+
   it("returns 'allow' on an MCP server wildcard global allow", () => {
     expect(
       decideConfirmation(

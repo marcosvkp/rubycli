@@ -17,11 +17,13 @@ export type AgentEvent =
   | { type: "text"; text: string }
   | {
       type: "tool_call";
+      /** Provider call ID, used to correlate this event with its result. */
+      id?: string;
       name: string;
       args: Record<string, unknown>;
       thoughtSignature?: string;
     }
-  | { type: "tool_result"; name: string; result: string }
+  | { type: "tool_result"; id?: string; name: string; result: string }
   | { type: "skill_activated"; name: string }
   | { type: "error"; message: string }
   /** Non-fatal informational message (e.g. auto-compact warnings/results).
@@ -303,6 +305,7 @@ export class Agent {
           });
           yield {
             type: "tool_call",
+            id: event.id,
             name: event.name,
             args: event.args,
             ...(event.thoughtSignature ? { thoughtSignature: event.thoughtSignature } : {}),
@@ -470,7 +473,12 @@ export class Agent {
       }
 
       for (const result of results) {
-        yield { type: "tool_result", name: result.name, result: result.result };
+        yield {
+          type: "tool_result",
+          id: result.id,
+          name: result.name,
+          result: result.result,
+        };
       }
 
       const allResultParts = [...skillResults, ...results];

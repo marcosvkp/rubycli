@@ -149,6 +149,10 @@ export function decideConfirmation(
   if (denyPatterns.length > 0 && matchesDenyPattern(denyPatterns, toolName, args)) {
     return "deny";
   }
+  // A broad or exact grant must never override the catastrophic command blocklist.
+  // Keep this in the normal interactive path as well as --yes so a prior `bash:*`
+  // approval cannot silently turn a later `rm -rf /` into an allowed call.
+  if (matchesNeverAutoApprove(toolName, args)) return "ask";
   const exactKey = `${toolName}:${JSON.stringify(args)}`;
   if (globalAllowSet.has(exactKey) || globalAllowSet.has(`${toolName}:*`)) return "allow";
   const mcpMatch = toolName.match(/^mcp__(.+?)__/);

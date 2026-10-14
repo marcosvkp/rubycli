@@ -58,6 +58,7 @@ describe("Agent + real file tool round-trip (E2E)", () => {
       // tool_result contains the actual file content
       const toolResult = events.find((e) => e.type === "tool_result");
       expect(toolResult?.result).toContain(fileContent);
+      expect(toolResult?.id).toBe(toolCall?.id);
 
       // Second LLM call received a function_result message (real serialization round-trip)
       expect(callCount).toBe(2);

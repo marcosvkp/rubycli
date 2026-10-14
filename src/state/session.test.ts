@@ -299,6 +299,32 @@ describe("Session.loadMessages", () => {
     expect(calls[0].id).not.toBe(calls[1].id);
   });
 
+  it("uses persisted call IDs when same-name results arrive out of order", async () => {
+    const session = await Session.create(CWD);
+    await session.log({ type: "user", content: "Run both" });
+    await session.log({ type: "tool_call", id: "provider-call-a", name: "bash", args: { n: 1 } });
+    await session.log({ type: "tool_call", id: "provider-call-b", name: "bash", args: { n: 2 } });
+    await session.log({
+      type: "tool_result",
+      id: "provider-call-b",
+      name: "bash",
+      result: "second result",
+    });
+    await session.log({
+      type: "tool_result",
+      id: "provider-call-a",
+      name: "bash",
+      result: "first result",
+    });
+
+    const { messages } = await Session.loadMessages(session.id, CWD);
+    const results = messages[2].parts as Array<{ id: string; result: string }>;
+    expect(results).toEqual([
+      { type: "function_result", id: "provider-call-b", name: "bash", result: "second result" },
+      { type: "function_result", id: "provider-call-a", name: "bash", result: "first result" },
+    ]);
+  });
+
   it("reconstructed function_call parts have no thoughtSignature (handled by GeminiClient internally)", async () => {
     const session = await Session.create(CWD);
     await session.log({ type: "user", content: "Tool call" });
