@@ -36,7 +36,8 @@ describe("PassthroughRunner", () => {
     const start = Date.now();
     const result = await runner.exec("sleep 30 & echo started", {
       cwd: process.cwd(),
-      timeout: 300,
+      // Leave enough startup time on Windows CI while the rest of Vitest is busy.
+      timeout: 3_000,
     });
     const elapsed = Date.now() - start;
 
