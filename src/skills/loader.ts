@@ -5,6 +5,7 @@ import { parse as parseYaml } from "yaml";
 export interface SkillMeta {
   name: string;
   description: string;
+  tags?: string[];
   allowedTools?: string[];
   disableAgentInvocation?: boolean;
   body: string; // raw SKILL.md body (frontmatter stripped)
@@ -19,6 +20,12 @@ export async function loadSkillFile(filePath: string): Promise<SkillMeta> {
 
   const name = (fm.name as string | undefined) ?? inferNameFromPath(filePath);
   const description = fm.description as string | undefined;
+  const rawTags = fm.tags;
+  const tags = Array.isArray(rawTags)
+    ? rawTags.filter((tag): tag is string => typeof tag === "string")
+    : typeof rawTags === "string"
+      ? rawTags.split(/[,\s]+/).filter(Boolean)
+      : [];
 
   if (!name) throw new Error(`Skill at ${filePath} is missing a name`);
   if (!description) throw new Error(`Skill "${name}" is missing a description`);
@@ -26,6 +33,7 @@ export async function loadSkillFile(filePath: string): Promise<SkillMeta> {
   return {
     name,
     description,
+    ...(tags.length > 0 ? { tags } : {}),
     allowedTools: fm["allowed-tools"] ? (fm["allowed-tools"] as string).split(/\s+/) : undefined,
     disableAgentInvocation: Boolean(fm["disable-agent-invocation"]),
     body,

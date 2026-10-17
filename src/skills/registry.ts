@@ -78,6 +78,84 @@ export class SkillRegistry {
     return Array.from(this.catalog.values());
   }
 
+  /** Search the in-memory skill catalog; no filesystem scan is needed. */
+  search(query: string, limit = 8): SkillEntry[] {
+    const normalise = (value: string) =>
+      value
+        .toLocaleLowerCase()
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "")
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
+    const stopWords = new Set([
+      "a",
+      "as",
+      "o",
+      "os",
+      "um",
+      "uma",
+      "de",
+      "do",
+      "da",
+      "dos",
+      "das",
+      "em",
+      "no",
+      "na",
+      "nos",
+      "nas",
+      "para",
+      "por",
+      "com",
+      "que",
+      "e",
+      "the",
+      "an",
+      "and",
+      "or",
+      "for",
+      "to",
+      "of",
+      "in",
+      "on",
+      "how",
+      "what",
+      "read",
+      "skill",
+      "skills",
+    ]);
+    const terms = normalise(query)
+      .split(/\s+/)
+      .filter((term) => term.length > 1 && !stopWords.has(term));
+    if (terms.length === 0) return [];
+
+    const scored = this.list()
+      .map((entry, index) => {
+        const name = normalise(entry.name);
+        const description = normalise(entry.description);
+        const tags = normalise((entry.tags ?? []).join(" "));
+        let score = 0;
+        let matchedTerms = 0;
+        for (const term of terms) {
+          const inName = name.includes(term);
+          const inDescription = description.includes(term);
+          const inTags = tags.includes(term);
+          if (inName || inDescription || inTags) matchedTerms++;
+          if (inName) score += 6;
+          if (inDescription) score += 2;
+          if (inTags) score += 8;
+        }
+        const phrase = normalise(query);
+        if (phrase && (name.includes(phrase) || description.includes(phrase))) score += 4;
+        return { entry, index, score, matchedTerms };
+      })
+      .filter((candidate) => candidate.score > 0)
+      .sort((a, b) => b.score - a.score || b.matchedTerms - a.matchedTerms || a.index - b.index);
+
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(32, Math.floor(limit))) : 8;
+    return scored.slice(0, safeLimit).map((candidate) => candidate.entry);
+  }
+
   get(name: string): SkillEntry | undefined {
     return this.catalog.get(name);
   }
@@ -99,6 +177,9 @@ export class SkillRegistry {
     const entries = this.list();
     if (entries.length === 0) return "";
     const lines = entries.map((s) => `- ${s.name}: ${s.description}`);
-    return `## Available Skills\nActivate with /skill-name or by calling activate_skill.\n${lines.join("\n")}`;
+    return `## Available Skills
+The skill catalog is already indexed in memory. Use read_skills(query, limit) to find and read matching instructions in one call; set limit to 32 when the user asks for every skill in a family. This reads raw SKILL.md text and does not run shell preprocessors. Use activate_skill for one selected skill when its activation-time project context is needed. Do not search the workspace to locate bundled skills.
+Activate with /skill-name or by calling activate_skill.
+${lines.join("\n")}`;
   }
 }

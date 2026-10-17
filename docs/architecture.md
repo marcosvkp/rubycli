@@ -473,6 +473,18 @@ src/skills/
     branch/      Create feature branches tied to issue numbers
     new-skill/   Scaffold a custom SKILL.md interactively (disable-agent-invocation)
     changelog/   Generate a changelog from recent git history
+    minecraft-mods/, mod-scaffold-fabric/, mod-scaffold-neoforge/, gradle-build/
+                 Java mod routing, project scaffolding, and Gradle workflows
+    mc-gametest/, mixin-helper/, recipe-datagen/, worldgen-gen/, mod-multi-version/
+                 Java tests, mappings, data generation, worldgen, and compatibility
+    modrinth-publish/, curseforge-publish/, mc-docs-lookup/, plugin-scaffold-paper/
+                 Publishing preflight, versioned references, and Paper plugins
+    behavior-pack-builder/, script-api-dev/, molang-eval/, particle-gen/, bedrock-test/
+                 Bedrock packs, Script API, Molang, particles, and runtime validation
+    nbt-inspect-edit/, world-edit-amulet/, blockbench-model/, server-rcon-bot/, launcher-mcp/
+                 World/data editing and optional model, server, and launcher integrations
+    mcbe-json-ui/, mcbe-json-ui-debug/, mcbe-ui-flow-audit/, mcbe-ui-component-kit/
+    mcbe-attachables-geoui/  Bedrock UI creation, audit, reusable patterns, and assets
 ```
 
 #### Discovery priority (first match wins)

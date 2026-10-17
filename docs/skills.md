@@ -77,7 +77,9 @@ A project-scoped skill with the same `name` as a built-in **overrides** the buil
 
 ## Catalog Injection
 
-At session start, `SkillRegistry.discover()` is called and the catalog (name + description for every discovered skill) is injected into the system prompt via `{SKILL_CATALOG}`. This lets the model call `activate_skill("<name>")` on its own when the task matches a skill's description — no user `/` command needed.
+At session start, `SkillRegistry.discover()` is called and the catalog (name + description for every discovered skill) is injected into the system prompt via `{SKILL_CATALOG}`. The catalog is already indexed in memory, so the model should not search the workspace for bundled skill files. Search matches skill names, descriptions, and optional frontmatter tags; the Minecraft skill family is tagged for complete topic lookup.
+
+Use `read_skills(query, limit)` to find and read multiple matching `SKILL.md` bodies in one call. It returns raw text and never executes embedded `!{shell}` preprocessors; use `limit: 32` when the user asks for every skill in a family. For one selected skill that needs activation-time project context, use `activate_skill("<name>")`. Both are available without a user `/` command.
 
 ---
 
@@ -98,6 +100,44 @@ At session start, `SkillRegistry.discover()` is called and the catalog (name + d
 | `/test` | Write tests for a function or module | No |
 | `/changelog` | Generate a changelog or release notes from recent git history | No |
 | `/new-skill` | Scaffold a new custom SKILL.md file interactively | Yes |
+
+### Minecraft modding skills
+
+These built-ins provide version-aware workflows and use the project's existing file,
+shell, web, and configured MCP tools. They do not install MCP servers or grant tools
+permission to bypass the normal confirmation gate. Minecraft assets and third-party
+skill packs are not bundled.
+
+| Slash command | Description |
+|---|---|
+| `/minecraft-mods` | Route a task by edition, version, loader, and project state |
+| `/mod-scaffold-fabric` | Create or adapt a Fabric mod project |
+| `/mod-scaffold-neoforge` | Create or adapt a NeoForge mod project |
+| `/gradle-build` | Inspect and run the project's Gradle tasks |
+| `/mc-gametest` | Write and run Java GameTests |
+| `/mixin-helper` | Check Mixin targets against versioned sources and mappings |
+| `/recipe-datagen` | Generate recipes, loot, advancements, and tags |
+| `/worldgen-gen` | Implement and validate world generation |
+| `/mod-multi-version` | Plan and validate a multi-version build matrix |
+| `/modrinth-publish` | Prepare or publish a Modrinth release with approval |
+| `/curseforge-publish` | Prepare or publish a CurseForge release with approval |
+| `/mc-docs-lookup` | Find version-specific Minecraft and loader documentation |
+| `/plugin-scaffold-paper` | Create or adapt a Paper server plugin |
+| `/behavior-pack-builder` | Build Bedrock behavior/resource packs |
+| `/script-api-dev` | Develop Bedrock Script API projects |
+| `/molang-eval` | Write and debug Molang expressions |
+| `/particle-gen` | Create Bedrock particle definitions |
+| `/bedrock-test` | Validate Bedrock packs with schemas, GameTest, and content log |
+| `/nbt-inspect-edit` | Inspect or safely edit Java/Bedrock NBT |
+| `/world-edit-amulet` | Plan world-region editing and conversion with Amulet |
+| `/blockbench-model` | Work with Blockbench models through an available integration |
+| `/server-rcon-bot` | Plan approved RCON/bot actions on a named server |
+| `/launcher-mcp` | Use an already configured Minecraft launcher integration |
+| `/mcbe-json-ui` | Create Bedrock JSON UI in a versioned resource pack |
+| `/mcbe-json-ui-debug` | Diagnose JSON UI references and content-log errors |
+| `/mcbe-ui-flow-audit` | Trace screen routes and button mappings |
+| `/mcbe-ui-component-kit` | Design reusable layout and behavior patterns for JSON UI |
+| `/mcbe-attachables-geoui` | Work with attachables, geometry, and render controllers |
 
 ---
 

@@ -97,10 +97,11 @@ export function truncateOutput(output: string, callId: string, tmpDir?: string):
 
 export interface ExecutionResult {
   results: FunctionResultPart[];
-  // Synthetic function_result entries for activate_skill calls — not surfaced as
-  // tool_result events but required so every functionCall has a matching
-  // functionResponse in the conversation history (Gemini/Anthropic require this).
+  // Synthetic function_result entries for internal skill calls. Skill reads are
+  // returned to the model without executing preprocessors; activation calls inject
+  // processed content into context. Each still needs a provider-matched response.
   skillResults: FunctionResultPart[];
+  skillReadSummaries: Array<{ id: string; result: string }>;
 }
 
 /**
@@ -243,28 +244,76 @@ export async function executeCalls(
   calls: FunctionCallPart[],
   deps: ExecutorDeps,
 ): Promise<ExecutionResult> {
-  // Separate skill activations from regular tool calls
-  const skillCalls = calls.filter((c) => c.name === "activate_skill");
-  const toolCalls = calls.filter((c) => c.name !== "activate_skill");
+  // Skill operations use the already-loaded registry and never crawl the workspace.
+  const skillCalls = calls.filter((c) => c.name === "activate_skill" || c.name === "read_skills");
+  const toolCalls = calls.filter((c) => c.name !== "activate_skill" && c.name !== "read_skills");
 
-  // Handle skill activations: mutate context and build synthetic function_result
-  // entries so every functionCall has a matching functionResponse in history.
+  // Internal calls need synthetic function_result entries because they are handled
+  // here rather than dispatched through ToolRegistry.
   const skillResults: FunctionResultPart[] = [];
+  const skillReadSummaries: Array<{ id: string; result: string }> = [];
   for (const call of skillCalls) {
-    const name = call.args.name as string;
-    if (!deps.context.hasSkill(name)) {
-      const body = await deps.skills.load(name);
-      if (body) {
-        deps.context.addSkillContent(name, body);
-      }
-    }
     const sig = call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {};
+    if (call.name === "activate_skill") {
+      const name = typeof call.args.name === "string" ? call.args.name : "";
+      if (name && !deps.context.hasSkill(name)) {
+        const body = await deps.skills.load(name);
+        if (body) deps.context.addSkillContent(name, body);
+      }
+      skillResults.push({
+        type: "function_result",
+        id: call.id,
+        name: call.name,
+        result: name ? "Skill activated." : "A skill name is required.",
+        ...sig,
+      });
+      continue;
+    }
+
+    const query = typeof call.args.query === "string" ? call.args.query.trim() : "";
+    const rawLimit = call.args.limit;
+    const limit =
+      typeof rawLimit === "number" && Number.isFinite(rawLimit)
+        ? Math.max(1, Math.min(32, Math.floor(rawLimit)))
+        : 8;
+    const matches = query ? deps.skills.search(query, limit) : [];
+    const sections: string[] = [];
+    let bodyChars = 0;
+    let stoppedForSize = false;
+    const maxChars = 100_000;
+    for (const skill of matches) {
+      const section = `## ${skill.name}\n${skill.description}\n\n${skill.body.trim()}`;
+      if (bodyChars + section.length > maxChars) {
+        stoppedForSize = true;
+        break;
+      }
+      sections.push(section);
+      bodyChars += section.length;
+    }
+    const readCount = sections.length;
+    const names = matches.slice(0, readCount).map((skill) => skill.name);
+    const result =
+      readCount === 0
+        ? `No skills matched query "${query}". Try a broader topic or an exact skill name.`
+        : `Read ${readCount} skill(s) matching "${query}": ${names.join(", ")}.\n\n` +
+          `The contents below are raw SKILL.md instructions. Shell preprocessors such as !{...} were not run.\n\n` +
+          sections.join("\n\n") +
+          (stoppedForSize
+            ? "\n\n[Reading stopped at the 100,000 character safety limit; narrow the query to read the remaining skills.]"
+            : "");
     skillResults.push({
       type: "function_result",
       id: call.id,
       name: call.name,
-      result: "Skill activated.",
+      result,
       ...sig,
+    });
+    skillReadSummaries.push({
+      id: call.id,
+      result:
+        readCount === 0
+          ? `No skills matched "${query}".`
+          : `Read ${readCount} skill(s): ${names.join(", ")}${stoppedForSize ? " (stopped at the size limit)" : ""}.`,
     });
   }
 
@@ -306,5 +355,5 @@ export async function executeCalls(
     results = await Promise.all(toolCalls.map((call) => executeOneCall(call, batchDeps)));
   }
 
-  return { results, skillResults };
+  return { results, skillResults, skillReadSummaries };
 }

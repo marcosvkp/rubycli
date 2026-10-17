@@ -1,7 +1,11 @@
 import type { LLMClient } from "../providers/client.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { SkillRegistry } from "../skills/registry.js";
-import { toolToDefinition, activateSkillDefinition } from "../providers/schema.js";
+import {
+  toolToDefinition,
+  activateSkillDefinition,
+  readSkillsDefinition,
+} from "../providers/schema.js";
 import { ContextManager } from "./context.js";
 import { executeCalls, type PermissionMode } from "./executor.js";
 import type { ConfirmFn } from "./executor.js";
@@ -233,15 +237,25 @@ export class Agent {
       parts: [{ type: "text", text: userInput }],
     });
 
-    const allToolDefs = [...this.tools.all().map(toolToDefinition), activateSkillDefinition];
+    const allToolDefs = [
+      ...this.tools.all().map(toolToDefinition),
+      activateSkillDefinition,
+      readSkillsDefinition,
+    ];
 
     let toolDefinitions = allToolDefs;
     let systemInstruction: string;
 
     if (mode === "plan") {
       const readonlyTools = this.tools.all().filter((t) => t.readonly);
-      toolDefinitions = [...readonlyTools.map(toolToDefinition), activateSkillDefinition];
-      const planSuffix = buildPlanSuffix(new Set(readonlyTools.map((t) => t.name)));
+      toolDefinitions = [
+        ...readonlyTools.map(toolToDefinition),
+        activateSkillDefinition,
+        readSkillsDefinition,
+      ];
+      const planTools = new Set(readonlyTools.map((t) => t.name));
+      planTools.add("read_skills");
+      const planSuffix = buildPlanSuffix(planTools);
       systemInstruction = this.context.getSystemInstruction(toolDefinitions) + planSuffix;
     } else {
       systemInstruction = this.context.getSystemInstruction(allToolDefs);
@@ -391,7 +405,7 @@ export class Agent {
         stuckCount = 1;
       }
 
-      const { results, skillResults } = await executeCalls(pendingCalls, {
+      const { results, skillResults, skillReadSummaries } = await executeCalls(pendingCalls, {
         tools: this.tools,
         skills: this.skills,
         context: this.context,
@@ -478,6 +492,14 @@ export class Agent {
           id: result.id,
           name: result.name,
           result: result.result,
+        };
+      }
+      for (const summary of skillReadSummaries) {
+        yield {
+          type: "tool_result",
+          id: summary.id,
+          name: "read_skills",
+          result: summary.result,
         };
       }
 
