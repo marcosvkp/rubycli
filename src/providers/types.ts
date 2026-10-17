@@ -1,6 +1,9 @@
 // "model" is used internally; each client translates to its provider's role name ("assistant" for Anthropic)
 export type Role = "user" | "model";
 
+/** Reasoning effort values accepted by modern OpenAI-compatible model APIs. */
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
 // Provider-agnostic tool definition passed to LLMClient.stream(); parameters is plain JSONSchema
 export interface ToolDefinition {
   name: string;

@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { LLMClient } from "./client.js";
-import type { Message, StreamEvent, ToolDefinition } from "./types.js";
+import type { Message, ReasoningEffort, StreamEvent, ToolDefinition } from "./types.js";
 import { withRetry } from "./retry.js";
 import { toFriendlyError, type ProviderName } from "./errors.js";
 import { salvageToolCalls, contentIsOnlyToolCalls } from "./salvage.js";
@@ -64,8 +64,9 @@ export class OpenAIClient implements LLMClient {
   private includeUsage: boolean;
   private maxTokens: number;
   private temperature: number | undefined;
-  /** Reasoning effort for reasoning models: "low" | "medium" | "high". */
-  private reasoningEffort: "low" | "medium" | "high" | undefined;
+  /** Reasoning effort for reasoning models. */
+  private reasoningEffort: ReasoningEffort | undefined;
+  private supportsReasoningEffort: boolean | undefined;
   private salvage: boolean;
   private providerLabel: string;
   private keyHint?: string;
@@ -81,9 +82,10 @@ export class OpenAIClient implements LLMClient {
       temperature?: number;
       /** Recover tool calls emitted as plain text. Enabled for OSS/local presets. */
       salvage?: boolean;
-      /** Reasoning effort for reasoning models ("low" | "medium" | "high").
+      /** Reasoning effort for reasoning models.
        *  Sent as reasoning_effort; ignored by non-reasoning models. */
-      reasoningEffort?: "low" | "medium" | "high";
+      reasoningEffort?: ReasoningEffort;
+      supportsReasoningEffort?: boolean;
       /** Human label used in friendly error messages (defaults to "[OI]"). */
       providerLabel?: string;
       /** Remediation hint for 401 errors, composed by the CLI layer. */
@@ -100,6 +102,7 @@ export class OpenAIClient implements LLMClient {
     this.temperature = options?.temperature;
     this.salvage = options?.salvage ?? false;
     this.reasoningEffort = options?.reasoningEffort;
+    this.supportsReasoningEffort = options?.supportsReasoningEffort;
     this.providerLabel = options?.providerLabel ?? "[OI]";
     this.keyHint = options?.keyHint;
     this.onWarn = options?.onWarn;
@@ -110,7 +113,7 @@ export class OpenAIClient implements LLMClient {
     systemInstruction: string,
     tools: ToolDefinition[],
   ): AsyncGenerator<StreamEvent> {
-    const reasoning = isReasoningModel(this.model);
+    const reasoning = this.supportsReasoningEffort ?? isReasoningModel(this.model);
     const openaiMessages = messagesToOpenAIParams(messages, systemInstruction, reasoning);
     const openaiTools: OpenAI.ChatCompletionFunctionTool[] = tools.map(definitionToOpenAITool);
     // Only reasoning models accept reasoning_effort; sending it to others 400s.
@@ -145,7 +148,7 @@ export class OpenAIClient implements LLMClient {
     openaiMessages: OpenAI.ChatCompletionMessageParam[],
     openaiTools: OpenAI.ChatCompletionFunctionTool[],
     toolNames: string[],
-    effort: "low" | "medium" | "high" | undefined,
+    effort: ReasoningEffort | undefined,
   ): AsyncGenerator<StreamEvent> {
     const apiStream = await this.client.chat.completions.create({
       model: this.model,
@@ -155,7 +158,8 @@ export class OpenAIClient implements LLMClient {
       stream: true,
       stream_options: this.includeUsage ? { include_usage: true } : undefined,
       ...(this.temperature !== undefined ? { temperature: this.temperature } : {}),
-      ...(effort !== undefined ? { reasoning_effort: effort } : {}),
+      // The OpenAI SDK type currently lags API models that accept none/minimal/xhigh/max.
+      ...(effort !== undefined ? { reasoning_effort: effort as "low" | "medium" | "high" } : {}),
     });
 
     const pendingCalls = new Map<number, { id: string; name: string; args: string }>();

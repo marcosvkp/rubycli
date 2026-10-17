@@ -33,6 +33,31 @@ import type { ProjectDoc } from "../core/prompt.js";
 import { INIT_DOC_NAME, displayPath, initDocPath } from "./project-doc.js";
 import { gitDiffStat, gitDiffFull, gitBranch } from "./git-info.js";
 import { runAutoGoal } from "../goal/auto.js";
+import type { ReasoningEffort } from "../providers/types.js";
+
+const REASONING_EFFORT_LEVELS: readonly ReasoningEffort[] = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
+function parseReasoningEffort(value: string): ReasoningEffort | undefined {
+  const aliases: Record<string, ReasoningEffort> = {
+    off: "none",
+    minimum: "minimal",
+    "extra-high": "xhigh",
+    extra_high: "xhigh",
+    maximum: "max",
+  };
+  const normalized = aliases[value] ?? value;
+  return REASONING_EFFORT_LEVELS.includes(normalized as ReasoningEffort)
+    ? (normalized as ReasoningEffort)
+    : undefined;
+}
 
 /** Session-scoped connection info the REPL needs for /model switching and /status. */
 export interface ReplConnection {
@@ -58,7 +83,11 @@ const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: "status", description: "show connection, model, permissions and project settings" },
   { name: "diff", description: "show uncommitted changes in the working tree" },
   { name: "model", description: "show or switch the session model (lists API models)" },
-  { name: "effort", description: "show or set reasoning effort: low | medium | high" },
+  {
+    name: "effort",
+    description:
+      "show or set reasoning effort: none/off | minimal/minimum | low | medium | high | xhigh/extra-high | max/maximum",
+  },
   { name: "goal", description: "set, show, pause, resume or clear the session goal" },
   {
     name: "auto",
@@ -473,9 +502,10 @@ export async function runRepl(
     }
 
     // /effort — reasoning effort for reasoning-capable models.
-    // Bare "/effort" shows the current value; "/effort low|medium|high" sets it.
+    // Bare "/effort" shows the current value; "/effort <level>" sets it.
     if (input === "/effort" || input.startsWith("/effort ")) {
       const arg = input.slice(7).trim().toLowerCase();
+      const effort = parseReasoningEffort(arg);
       if (!arg) {
         const current = agent.getReasoningEffort();
         if (!agent.supportsReasoningEffort()) {
@@ -484,18 +514,20 @@ export async function runRepl(
           );
         } else {
           printInfo(
-            `Reasoning effort: ${current ?? "default (medium)"} — set with /effort low|medium|high`,
+            `Reasoning effort: ${current ?? "default"} — set with /effort none/off|minimal/minimum|low|medium|high|xhigh/extra-high|max/maximum`,
           );
         }
-      } else if (arg !== "low" && arg !== "medium" && arg !== "high") {
-        printError("Usage: /effort low|medium|high");
+      } else if (!effort) {
+        printError(
+          "Usage: /effort none/off|minimal/minimum|low|medium|high|xhigh/extra-high|max/maximum",
+        );
       } else if (!agent.supportsReasoningEffort()) {
         printError(
           `Model '${agent.getModel()}' has no reasoning controls. Switch to a reasoning model first.`,
         );
       } else {
         agent.setReasoningEffort(
-          arg,
+          effort,
           (model, effort) =>
             createClient(model, connection?.apiKey ?? "", {
               includeUsage: true,
@@ -503,6 +535,7 @@ export async function runRepl(
               baseUrl: connection?.baseUrl,
               temperature: connection?.temperature,
               reasoningEffort: effort,
+              supportsReasoningEffort: true,
             }),
           // Compaction is a summarization call — it deliberately keeps the
           // default effort rather than inheriting the user's setting.

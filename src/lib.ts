@@ -21,6 +21,7 @@
  */
 
 // --- Agent loop -------------------------------------------------------------
+export type { ReasoningEffort } from "./providers/types.js";
 export { Agent } from "./core/agent.js";
 export type { AgentEvent, AgentRunMode } from "./core/agent.js";
 export { ContextManager } from "./core/context.js";

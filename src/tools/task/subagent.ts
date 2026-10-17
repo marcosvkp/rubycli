@@ -5,7 +5,16 @@ import type { Tool } from "../base.js";
  * starts the requested role in an isolated environment.
  */
 export type SubAgentRole = "explorer" | "worker";
-export type SubAgentReasoningEffort = "low" | "medium" | "high";
+export const SUBAGENT_REASONING_EFFORTS = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
+export type SubAgentReasoningEffort = (typeof SUBAGENT_REASONING_EFFORTS)[number];
 
 export interface SpawnSubAgentOptions {
   maxTurns: number;
@@ -67,7 +76,7 @@ export function createTaskTool(spawnSubAgent?: SpawnSubAgentFn): Tool {
         },
         reasoning_effort: {
           type: "string",
-          enum: ["low", "medium", "high"],
+          enum: [...SUBAGENT_REASONING_EFFORTS],
           description: "Optional reasoning effort, validated against the selected model",
         },
         instructions: {
@@ -107,10 +116,9 @@ export function createTaskTool(spawnSubAgent?: SpawnSubAgentFn): Tool {
             ? params.model.trim().slice(0, 160)
             : undefined;
         const reasoningEffort =
-          params.reasoning_effort === "low" ||
-          params.reasoning_effort === "medium" ||
-          params.reasoning_effort === "high"
-            ? params.reasoning_effort
+          typeof params.reasoning_effort === "string" &&
+          (SUBAGENT_REASONING_EFFORTS as readonly string[]).includes(params.reasoning_effort)
+            ? (params.reasoning_effort as SubAgentReasoningEffort)
             : undefined;
         const instructions =
           typeof params.instructions === "string" ? params.instructions.trim().slice(0, 8000) : "";

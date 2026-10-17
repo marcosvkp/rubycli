@@ -2,6 +2,7 @@ import { GeminiClient } from "./gemini.js";
 import { AnthropicClient } from "./anthropic.js";
 import { OpenAIClient } from "./openai.js";
 import type { LLMClient } from "./client.js";
+import type { ReasoningEffort } from "./types.js";
 import {
   PRESETS,
   getPreset,
@@ -65,8 +66,10 @@ export function createClient(
     provider?: Provider;
     baseUrl?: string;
     temperature?: number;
-    /** Reasoning effort for reasoning models ("low" | "medium" | "high"). */
-    reasoningEffort?: "low" | "medium" | "high";
+    /** Reasoning effort for reasoning models. */
+    reasoningEffort?: ReasoningEffort;
+    /** Capability reported by the model catalog; overrides name-based detection. */
+    supportsReasoningEffort?: boolean;
     /** Non-fatal diagnostics sink, injected by the CLI. */
     onWarn?: (message: string) => void;
   },
@@ -101,6 +104,7 @@ export function createClient(
       maxTokens: options?.maxTokens,
       temperature: options?.temperature,
       reasoningEffort: options?.reasoningEffort,
+      supportsReasoningEffort: options?.supportsReasoningEffort,
       baseUrl,
       salvage: preset?.salvageToolCalls ?? false,
       providerLabel: errorLabel,

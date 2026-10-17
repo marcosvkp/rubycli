@@ -10,7 +10,7 @@ export interface WorkflowAgentConfig {
   prompt: string;
   role?: "explorer" | "worker";
   model?: string;
-  reasoningEffort?: "low" | "medium" | "high";
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   instructions?: string;
   maxTurns?: number;
   resultSchema?: WorkflowResultSchema;
@@ -391,8 +391,17 @@ function validateAgentConfig(config: WorkflowAgentConfig): WorkflowAgentConfig {
       ? undefined
       : requireText(config.instructions, "agent instructions", MAX_INSTRUCTIONS_CHARS);
   const effort = config.reasoningEffort;
-  if (effort !== undefined && effort !== "low" && effort !== "medium" && effort !== "high") {
-    throw new Error(`Agent ${name} reasoningEffort must be low, medium, or high.`);
+  if (
+    effort !== undefined &&
+    effort !== "none" &&
+    effort !== "minimal" &&
+    effort !== "low" &&
+    effort !== "medium" &&
+    effort !== "high" &&
+    effort !== "xhigh" &&
+    effort !== "max"
+  ) {
+    throw new Error(`Agent ${name} has an unsupported reasoning effort.`);
   }
   const maxTurns = config.maxTurns ?? 15;
   if (!Number.isInteger(maxTurns) || maxTurns < 1 || maxTurns > 30) {

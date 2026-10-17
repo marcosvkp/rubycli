@@ -39,6 +39,10 @@ export interface RemoteModel {
   maxOutputTokens?: number | null;
   /** Whether the model reasons natively, making a `think` tool redundant. */
   supports_reasoning?: boolean;
+  /** Effort levels accepted by this model, when the provider publishes them. */
+  reasoning_efforts?: string[];
+  /** Alias some gateways use for the same capability list. */
+  reasoningEfforts?: string[];
   supports_vision?: boolean;
 }
 

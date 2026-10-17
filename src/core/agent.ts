@@ -10,7 +10,7 @@ import { ContextManager } from "./context.js";
 import { executeCalls, type PermissionMode } from "./executor.js";
 import type { ConfirmFn } from "./executor.js";
 import { buildReminder, buildPlanSuffix, buildPeriodicReminder } from "./prompt.js";
-import type { FunctionCallPart, Message } from "../providers/types.js";
+import type { FunctionCallPart, Message, ReasoningEffort } from "../providers/types.js";
 import type { ObservabilityHandler } from "./observability.js";
 import type { SnapshotManager } from "../state/snapshot.js";
 import { compactHistory, contextWindowFor, COMPACTION_TARGET_TOKENS } from "./compact.js";
@@ -62,7 +62,7 @@ export type AgentRunMode = "react" | "plan";
 export class Agent {
   private context: ContextManager;
   private permissionMode: PermissionMode = "normal";
-  private reasoningEffort: "low" | "medium" | "high" | undefined;
+  private reasoningEffort: ReasoningEffort | undefined;
   private confirmFn?: ConfirmFn;
   private forcesConfirmationFn?: (toolName: string, args: Record<string, unknown>) => boolean;
   private model: string;
@@ -98,7 +98,7 @@ export class Agent {
        *  name that also exists under another provider cannot inherit its window. */
       provider?: string;
       /** Initial effort for a hosted child agent; the CLI may still set it later. */
-      reasoningEffort?: "low" | "medium" | "high";
+      reasoningEffort?: ReasoningEffort;
       /** Workspace used for prompt context and tool permission containment. */
       workspaceRoot?: string;
     },
@@ -152,20 +152,20 @@ export class Agent {
   }
 
   /** Current reasoning effort, when one has been set this session. */
-  getReasoningEffort(): "low" | "medium" | "high" | undefined {
+  getReasoningEffort(): ReasoningEffort | undefined {
     return this.reasoningEffort;
   }
 
   /**
-   * Set reasoning effort ("low" | "medium" | "high"). Rebuilds the LLM client
+   * Set reasoning effort. Rebuilds the LLM client
    * (and compaction client) with the same model/connection so the next stream
    * carries reasoning_effort. No-op for non-[OI]-wire providers, which the CLI
    * guards anyway.
    */
   setReasoningEffort(
-    effort: "low" | "medium" | "high",
-    buildClient: (model: string, effort: "low" | "medium" | "high") => LLMClient,
-    buildCompactionClient?: (model: string, effort: "low" | "medium" | "high") => LLMClient,
+    effort: ReasoningEffort,
+    buildClient: (model: string, effort: ReasoningEffort) => LLMClient,
+    buildCompactionClient?: (model: string, effort: ReasoningEffort) => LLMClient,
   ): void {
     this.reasoningEffort = effort;
     this.client = buildClient(this.model, effort);
