@@ -24,7 +24,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { win32 as winPath } from "node:path";
 
 /** How to invoke a shell non-interactively with a single command string. */
 export interface ShellSpec {
@@ -56,10 +56,12 @@ function candidateBashPaths(env: NodeJS.ProcessEnv): string[] {
   // Git for Windows honours these; both are set by its installer.
   for (const key of ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]) {
     const root = env[key];
-    if (root) candidates.push(join(root, "Git", "bin", "bash.exe"));
+    if (root) candidates.push(winPath.join(root, "Git", "bin", "bash.exe"));
   }
   const localAppData = env.LOCALAPPDATA;
-  if (localAppData) candidates.push(join(localAppData, "Programs", "Git", "bin", "bash.exe"));
+  if (localAppData) {
+    candidates.push(winPath.join(localAppData, "Programs", "Git", "bin", "bash.exe"));
+  }
 
   candidates.push(
     "C:\\Program Files\\Git\\bin\\bash.exe",
@@ -82,9 +84,9 @@ export function findWindowsBash(
   exists: (path: string) => boolean = existsSync,
 ): string | null {
   const fromPath = (env.PATH ?? env.Path ?? "")
-    .split(delimiter)
+    .split(winPath.delimiter)
     .filter(Boolean)
-    .map((dir) => join(dir, "bash.exe"))
+    .map((dir) => winPath.join(dir, "bash.exe"))
     .filter((candidate) => !isWslStub(candidate))
     .filter(exists);
   if (fromPath.length > 0) return fromPath[0];
@@ -109,7 +111,13 @@ export function detectShell(
   if (bash) return { command: bash, args: ["-c"], label: "bash (Git for Windows)" };
 
   const systemRoot = env.SystemRoot ?? env.SYSTEMROOT ?? "C:\\Windows";
-  const powershell = join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const powershell = winPath.join(
+    systemRoot,
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
   if (exists(powershell)) {
     // -NoProfile keeps the user's profile from changing output or blocking on a
     // prompt; -NonInteractive does the same for anything that would read stdin.
@@ -121,7 +129,7 @@ export function detectShell(
   }
 
   return {
-    command: join(systemRoot, "System32", "cmd.exe"),
+    command: winPath.join(systemRoot, "System32", "cmd.exe"),
     args: ["/d", "/s", "/c"],
     label: "cmd.exe",
   };
