@@ -44,7 +44,15 @@ function expandServerConfig(name: string, config: McpServerConfig): McpServerCon
   return { ...config, command, args, env };
 }
 
-export async function loadMcpConfig(agentDir: string): Promise<McpConfig | null> {
+/** Expands environment references for a single in-memory server config. */
+export function resolveMcpServerConfig(name: string, config: McpServerConfig): McpServerConfig {
+  return expandServerConfig(name, config);
+}
+
+export async function loadMcpConfig(
+  agentDir: string,
+  options: { expandEnv?: boolean } = {},
+): Promise<McpConfig | null> {
   const configPath = join(agentDir, "mcp.json");
   let raw: string;
   try {
@@ -115,7 +123,7 @@ export async function loadMcpConfig(agentDir: string): Promise<McpConfig | null>
       };
     }
 
-    mcpServers[name] = expandServerConfig(name, config);
+    mcpServers[name] = options.expandEnv === false ? config : resolveMcpServerConfig(name, config);
   }
 
   return { mcpServers };
@@ -169,7 +177,10 @@ export async function saveMcpServer(
   const problem = validateMcpServerConfig(config);
   if (problem) throw new Error(problem);
 
-  const existing = (await loadMcpConfig(agentDir)) ?? { mcpServers: {} };
+  // Preserve ${VAR} references in existing entries. Loading the expanded view
+  // here would write resolved credentials back into mcp.json while adding a
+  // different server.
+  const existing = (await loadMcpConfig(agentDir, { expandEnv: false })) ?? { mcpServers: {} };
   const next: McpConfig = {
     mcpServers: { ...existing.mcpServers, [name]: config },
   };
@@ -178,7 +189,9 @@ export async function saveMcpServer(
 
 /** Removes one server. Returns false when it was not configured. */
 export async function removeMcpServer(agentDir: string, name: string): Promise<boolean> {
-  const existing = await loadMcpConfig(agentDir);
+  // Removal rewrites the remaining map, so read its raw values to avoid
+  // replacing environment references with the current process's secrets.
+  const existing = await loadMcpConfig(agentDir, { expandEnv: false });
   if (!existing || !(name in existing.mcpServers)) return false;
 
   const remaining = { ...existing.mcpServers };

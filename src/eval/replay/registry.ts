@@ -35,6 +35,7 @@ const READ_ONLY_TOOL_NAMES = new Set([
   "grep",
   "ls",
   "think",
+  "web_search",
   "web_fetch",
   "todo_read",
 ]);

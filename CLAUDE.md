@@ -53,9 +53,9 @@ src/
   core/           # Pure library — no process.env reads, no CLI/state imports
     agent.ts        # Agentic loop: stream → collect function calls → execute → feed back
     executor.ts     # Parallel tool execution, skill activation dispatch, HITL confirmation gate,
-                    #   provenance-tracking confirmation bump (#309): results from web_fetch/mcp__*/
+                    #   provenance-tracking confirmation bump (#309): results from web_search/web_fetch/mcp__*/
                     #   out-of-project reads are tagged untrusted; while any is consumed this turn,
-                    #   outbound/mutating tools (bash/write/edit/multi_edit/web_fetch/mcp__*) are forced
+                    #   outbound/mutating tools (bash/write/edit/multi_edit/web_search/web_fetch/mcp__*) are forced
                     #   through the gate (same-batch reads arm it pre-dispatch)
     context.ts      # Conversation history, skill content injection, context pruning
     prompt.ts       # DEFAULT_SYSTEM_INSTRUCTION template + loadSystemInstruction() (RUBYCLI_SYSTEM_MD)
@@ -81,7 +81,7 @@ src/
     registry.ts     # ToolRegistry: register, execute, list
     file/           # read, write, edit, multi_edit, glob, grep, ls; paths.ts (symlink-aware containment + credential-path checks)
     exec/           # bash (with requiresConfirmation for non-safe commands); sandbox/ (bwrap, sandbox-exec, passthrough)
-    web/            # web_fetch tool
+    web/            # web_search and web_fetch tools
     task/           # todo_write and todo_read tools
     think.ts        # think tool — private scratchpad; skipped for native-thinking models
     index.ts        # createDefaultRegistry(model?, runner?) factory — omits think for native-thinking models
@@ -108,6 +108,7 @@ src/
 **Data flow**: User input → CLI Layer → Agent Core → LLM provider (streaming) → Tool/Skill execution → feed results back → repeat until final text response.
 
 **Agentic loop** (`src/core/agent.ts`):
+
 1. Add user message to context
 2. Stream from the active `LLMClient` with tool + `activate_skill` definitions (filtered to read-only tools in plan mode)
 3. Collect text chunks (display immediately) and function calls
@@ -121,7 +122,7 @@ src/
 
 **Provider abstraction**: `LLMClient` (in `providers/client.ts`) is the single interface the Agent Core depends on. `schema.ts` converts `Tool` objects to generic `ToolDefinition` (plain JSONSchema). Each provider client translates `ToolDefinition[]` and `Message[]` into its own wire format internally — Gemini converts types to uppercase and uses `functionCall`/`functionResponse`; Anthropic maps `role: "model"` → `"assistant"` and uses `tool_use`/`tool_result` blocks. `providers/registry.ts` holds the `PRESETS` table describing every provider (wire format, base URL, API-key env vars, model context windows, capabilities); `createClient()` and `detectProvider()` read from it, so **adding a provider means editing one table, not four call sites**. API key resolution (env vars + config file) happens in `cli/keys.ts` — the library layer never reads `process.env` or config files.
 
-**OSS + local models (B6)**: Kimi, GLM, DeepSeek, Qwen, OpenRouter, and Ollama all reuse the OpenAI wire client. Two behaviours are specific to them and opt-in per preset: `salvage.ts` recovers tool calls that open-weight models emit as bare or fenced JSON in message content (only when a turn produced no structured calls, and only for a name that was actually offered), and `ollama-discovery.ts` queries `/api/tags` for a local model's true context window, which is routinely *smaller* than the static default. See [`docs/design/b6-oss-models.md`](docs/design/b6-oss-models.md).
+**OSS + local models (B6)**: Kimi, GLM, DeepSeek, Qwen, OpenRouter, and Ollama all reuse the OpenAI wire client. Two behaviours are specific to them and opt-in per preset: `salvage.ts` recovers tool calls that open-weight models emit as bare or fenced JSON in message content (only when a turn produced no structured calls, and only for a name that was actually offered), and `ollama-discovery.ts` queries `/api/tags` for a local model's true context window, which is routinely _smaller_ than the static default. See [`docs/design/b6-oss-models.md`](docs/design/b6-oss-models.md).
 
 **Thinking models + `thoughtSignature`**: Gemini thinking models (e.g. `gemini-3.1-*`) require `thoughtSignature` to be captured from each `functionCall` part and echoed back in the corresponding `functionResponse`. This is threaded through `FunctionCallPart` → `FunctionResultPart` → the API request in `gemini.ts`. The Anthropic client ignores this field.
 
@@ -138,11 +139,13 @@ src/
 - ESLint: `@typescript-eslint/recommended` + no unused vars (underscore prefix to suppress)
 
 **Before submitting any change**, run:
+
 ```bash
 npm run typecheck && npm run lint && npm run format:check && npm test
 ```
 
 **Full engineering practices are in [`docs/engineering-practices.md`](docs/engineering-practices.md).** Check it before writing code. Key rules:
+
 - Colocate tests next to source (`context.ts` → `context.test.ts`)
 - Each layer owns its concern — `providers/` never touches filesystem, `tools/` never imports provider SDKs
 - No circular imports: `cli → core/providers/tools/skills/state`
@@ -171,6 +174,7 @@ npm run typecheck && npm run lint && npm run format:check && npm test
 - `~/.rubycli/mcp.json` — MCP server definitions
 
 Every `RUBYCLI_*` variable also accepts its legacy `OPENCLI_*` name, so pre-rename setups keep working.
+
 - `.gitignore` excludes `.env` and `dist/`
 
 ## Session Management

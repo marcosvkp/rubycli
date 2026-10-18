@@ -237,29 +237,35 @@ export class Agent {
       parts: [{ type: "text", text: userInput }],
     });
 
-    const allToolDefs = [
-      ...this.tools.all().map(toolToDefinition),
-      activateSkillDefinition,
-      readSkillsDefinition,
-    ];
-
-    let toolDefinitions = allToolDefs;
-    let systemInstruction: string;
-
-    if (mode === "plan") {
-      const readonlyTools = this.tools.all().filter((t) => t.readonly);
-      toolDefinitions = [
-        ...readonlyTools.map(toolToDefinition),
+    const currentTooling = () => {
+      const allToolDefs = [
+        ...this.tools.all().map(toolToDefinition),
         activateSkillDefinition,
         readSkillsDefinition,
       ];
-      const planTools = new Set(readonlyTools.map((t) => t.name));
-      planTools.add("read_skills");
-      const planSuffix = buildPlanSuffix(planTools);
-      systemInstruction = this.context.getSystemInstruction(toolDefinitions) + planSuffix;
-    } else {
-      systemInstruction = this.context.getSystemInstruction(allToolDefs);
-    }
+      if (mode === "plan") {
+        const readonlyTools = this.tools.all().filter((t) => t.readonly);
+        const toolDefinitions = [
+          ...readonlyTools.map(toolToDefinition),
+          activateSkillDefinition,
+          readSkillsDefinition,
+        ];
+        const planTools = new Set(readonlyTools.map((t) => t.name));
+        planTools.add("read_skills");
+        const planSuffix = buildPlanSuffix(planTools);
+        return {
+          toolDefinitions,
+          systemInstruction: this.context.getSystemInstruction(toolDefinitions) + planSuffix,
+        };
+      }
+
+      return {
+        toolDefinitions: allToolDefs,
+        systemInstruction: this.context.getSystemInstruction(allToolDefs),
+      };
+    };
+
+    let systemInstruction = currentTooling().systemInstruction;
 
     // A5b auto-compact: fires only at this turn-boundary position — before any
     // LLM call or tool execution this turn. Any LLM/network errors inside
@@ -280,13 +286,19 @@ export class Agent {
     let emptyRetried = false;
     const firedReminders = new Set<string>();
     // #309 provenance bump: latched when any tool result this turn delivered
-    // untrusted content (out-of-project read, web_fetch, MCP). Scoped to this
+    // untrusted content (out-of-project read, web_search/web_fetch, MCP). Scoped to this
     // run() — the next user message starts a fresh turn with a clean slate, so
     // a legitimate task that reads external docs early doesn't stay elevated.
     let untrustedConsumed = false;
 
     while (true) {
       if (signal?.aborted) return;
+      // Registries may change during a run (for example, after an MCP server is
+      // added or removed). Rebuild the definitions before each provider call so
+      // the next iteration receives the current tool set and prompt catalogue.
+      const tooling = currentTooling();
+      const toolDefinitions = tooling.toolDefinitions;
+      systemInstruction = tooling.systemInstruction;
       const pendingCalls: FunctionCallPart[] = [];
       let responseText = "";
 

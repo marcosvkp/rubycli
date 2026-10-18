@@ -12,6 +12,11 @@ export class ToolRegistry {
     for (const tool of tools) this.register(tool);
   }
 
+  /** Remove a dynamically managed tool; returns false when it was not registered. */
+  unregister(name: string): boolean {
+    return this.tools.delete(name);
+  }
+
   get(name: string): Tool | undefined {
     return this.tools.get(name);
   }

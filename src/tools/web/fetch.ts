@@ -2,13 +2,16 @@ import { lookup } from "node:dns/promises";
 import { BlockList } from "node:net";
 import type { Tool } from "../base.js";
 
-const MAX_OUTPUT = Number(
+export const MAX_OUTPUT = Number(
   process.env.RUBYCLI_MAX_TOOL_OUTPUT ?? process.env.OPENCLI_MAX_TOOL_OUTPUT ?? 20_000,
 );
 
 // Hard cap on bytes read from the wire, independent of the post-processing output
 // truncation. Prevents a malicious endpoint from exhausting memory with a huge body.
-const MAX_RESPONSE_BYTES = 5_000_000;
+export const MAX_RESPONSE_BYTES = 5_000_000;
+
+// Bound the whole operation, including DNS validation before fetch starts.
+export const WEB_FETCH_TIMEOUT_MS = 15_000;
 
 // Opt-out for users who legitimately need to fetch private/local endpoints (e.g. a
 // local dev server). Default is deny, which is the safe choice for an agent that may
@@ -112,7 +115,7 @@ const MAX_REDIRECTS = 5;
  * manually, re-running assertSafeUrl on every hop (resolved relative to the current URL),
  * bounded by MAX_REDIRECTS. See GHSA-9gqj-5w58-2j6v.
  */
-async function safeFetch(url: string, init: RequestInit): Promise<Response> {
+export async function safeFetch(url: string, init: RequestInit): Promise<Response> {
   let current = url;
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
     await assertSafeUrl(current);
@@ -129,7 +132,7 @@ async function safeFetch(url: string, init: RequestInit): Promise<Response> {
 }
 
 /** Read up to maxBytes from a Response body, aborting if the stream exceeds it. */
-async function readCapped(res: Response, maxBytes: number): Promise<string> {
+export async function readCapped(res: Response, maxBytes: number): Promise<string> {
   if (!res.body) return await res.text();
   const reader = res.body.getReader();
   const decoder = new TextDecoder("utf-8");
@@ -149,11 +152,32 @@ async function readCapped(res: Response, maxBytes: number): Promise<string> {
   return text;
 }
 
+export async function withTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error(`Request timed out after ${timeoutMs / 1000} seconds`);
+      controller.abort(error);
+      reject(error);
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([operation(controller.signal), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export const webFetchTool: Tool = {
   name: "web_fetch",
   readonly: true,
   description:
-    "Fetch a URL and return its content as plain text. HTML is converted to readable text; JSON is returned as-is. Use for reading documentation, GitHub issues, API references, or any URL the user shares.",
+    "Fetch a known URL and return its content as plain text. Use web_search to discover pages, then use this tool to read documentation, GitHub issues, API references, or other specific URLs.",
   parameters: {
     type: "object",
     properties: {
@@ -163,18 +187,20 @@ export const webFetchTool: Tool = {
   },
   async execute({ url }) {
     try {
-      const res = await safeFetch(url as string, {
-        headers: { "User-Agent": "rubycli/1.0 (https://github.com/marcosvkp/rubycli)" },
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!res.ok) {
-        return { success: false, output: "", error: `HTTP ${res.status} ${res.statusText}` };
-      }
-      const contentType = res.headers.get("content-type") ?? "";
-      const raw = await readCapped(res, MAX_RESPONSE_BYTES);
-      const text = contentType.includes("text/html") ? stripHtml(raw) : raw;
-      const output = truncate(text.trim(), MAX_OUTPUT);
-      return { success: true, output };
+      return await withTimeout(async (signal) => {
+        const res = await safeFetch(url as string, {
+          headers: { "User-Agent": "rubycli/1.0 (https://github.com/marcosvkp/rubycli)" },
+          signal,
+        });
+        if (!res.ok) {
+          return { success: false, output: "", error: `HTTP ${res.status} ${res.statusText}` };
+        }
+        const contentType = res.headers.get("content-type") ?? "";
+        const raw = await readCapped(res, MAX_RESPONSE_BYTES);
+        const text = contentType.includes("text/html") ? stripHtml(raw) : raw;
+        const output = truncate(text.trim(), MAX_OUTPUT);
+        return { success: true, output };
+      }, WEB_FETCH_TIMEOUT_MS);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, output: "", error: message };
@@ -182,7 +208,7 @@ export const webFetchTool: Tool = {
   },
 };
 
-function stripHtml(html: string): string {
+export function stripHtml(html: string): string {
   return html
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
@@ -198,7 +224,7 @@ function stripHtml(html: string): string {
     .trim();
 }
 
-function truncate(text: string, max: number): string {
+export function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   const half = Math.floor(max / 2);
   return text.slice(0, half) + "\n…[truncated]…\n" + text.slice(-half);

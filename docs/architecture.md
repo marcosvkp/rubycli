@@ -65,10 +65,12 @@ src/cli/
 ```
 
 **Built-in REPL commands:**
+
 - `/plan <task>` — read-only planning pass → readline approval menu (Approve / Edit / Cancel) → react-mode execution
 - `/help`, `/clear`, `/exit` — housekeeping
 
 **Slash command (skill) interception:**
+
 1. Input starting with `/` is intercepted before forwarding to the Agent Core.
 2. `/<skill-name> [args]` is looked up in `SkillRegistry`.
 3. `!{cmd}` shell preprocessors are run; `$ARGUMENTS` is substituted.
@@ -136,6 +138,7 @@ src/core/
 #### Plan mode
 
 Invoked via `Agent.run(input, "plan")`:
+
 - Tool definitions filtered to `Tool.readonly === true` tools (dynamic — no hardcoded name list).
 - System instruction extended with `buildPlanSuffix()` (structured template: Understand → Explore → Design → Plan; mandatory numbered checklist output).
 - Executor additionally enforces `readOnly: true` as defence-in-depth (double guard).
@@ -167,20 +170,20 @@ Invoked via `Agent.run(input, "plan")`:
 
 Event types:
 
-| Event | When |
-|---|---|
-| `llm_call_start` | Before each LLM streaming call |
-| `llm_call_end` | After stream completes (includes token counts + latency) |
-| `context_snapshot` | Before each call (message count + rough token estimate) |
-| `tool_exec_start` | Before `tool.execute()` |
-| `tool_exec_end` | After `tool.execute()` (latency, success, output bytes) |
-| `tool_denied` | When a call is blocked (plan_mode / user_denied / non_interactive) |
-| `guard_triggered` | When a safety guard fires (max_turns, stuck_loop, or env_error_loop) |
-| `empty_response_retry` | When LLM returns an empty stream (no text, no tool calls) — retried once |
+| Event                      | When                                                                       |
+| -------------------------- | -------------------------------------------------------------------------- |
+| `llm_call_start`           | Before each LLM streaming call                                             |
+| `llm_call_end`             | After stream completes (includes token counts + latency)                   |
+| `context_snapshot`         | Before each call (message count + rough token estimate)                    |
+| `tool_exec_start`          | Before `tool.execute()`                                                    |
+| `tool_exec_end`            | After `tool.execute()` (latency, success, output bytes)                    |
+| `tool_denied`              | When a call is blocked (plan_mode / user_denied / non_interactive)         |
+| `guard_triggered`          | When a safety guard fires (max_turns, stuck_loop, or env_error_loop)       |
+| `empty_response_retry`     | When LLM returns an empty stream (no text, no tool calls) — retried once   |
 | `compact_threshold_warned` | When context ratio first crosses 60% of the compaction budget this session |
-| `compact_started` | Before a compaction starts (auto at 75% ratio, or manual via `/compact`) |
-| `compact_completed` | After `compactHistory()` returns successfully |
-| `compact_failed` | When `compactHistory()` throws — turn proceeds with full history |
+| `compact_started`          | Before a compaction starts (auto at 75% ratio, or manual via `/compact`)   |
+| `compact_completed`        | After `compactHistory()` returns successfully                              |
+| `compact_failed`           | When `compactHistory()` throws — turn proceeds with full history           |
 
 #### Context management (`context.ts`)
 
@@ -191,6 +194,7 @@ Event types:
 Template placeholders: `{CWD}`, `{SESSION_TMP}`, `{TOOL_CATALOG}`, `{GIT_CONTEXT}`, `{SKILL_CATALOG}`.
 
 **Git context** (`getGitContext()` in `prompt.ts`) is injected once at the start of each `getSystemInstruction()` render:
+
 - Current branch + default branch
 - `git status --short` (capped at 2 000 chars)
 - Last 5 commits from `git log --oneline`
@@ -202,10 +206,11 @@ Template placeholders: `{CWD}`, `{SESSION_TMP}`, `{TOOL_CATALOG}`, `{GIT_CONTEXT
 **Skill content** is held in a separate `skillContent[]` array, never pruned, tagged as `<skill_content name="...">`. Prepended as a synthetic `## Active Skills` user message when `getMessages()` is called.
 
 **Event-driven reminders** (`AGENT_REMINDERS` in `prompt.ts`): after each tool-execution round, `buildReminder()` appends a short reminder to the last tool result. Currently fires on:
+
 - `write`, `edit`, or `multi_edit` → "verify the change works — find and run the project's test command"
 - `write`, `edit`, or `multi_edit` → "don't add features or refactoring beyond what was asked"
 - `bash` with `git` in the command → "never commit or push without an explicit user request"
-Each reminder fires at most once per session.
+  Each reminder fires at most once per session.
 
 ---
 
@@ -248,17 +253,17 @@ a code change — before this existed, `detectProvider()`, `contextWindowFor()`,
 `hasNativeThinking()`, and `resolveApiKey()` each kept their own hardcoded list, and
 forgetting one produced silent misbehaviour.
 
-| Preset | Wire | Base URL | Key env |
-|---|---|---|---|
-| `gemini` | gemini | _(SDK default)_ | `GEMINI_API_KEY` |
-| `anthropic` | anthropic | _(SDK default)_ | `ANTHROPIC_API_KEY` |
-| `openai` | openai | _(SDK default)_ | `OPENAI_API_KEY` |
-| `ollama` | openai | `http://localhost:11434/v1` | _(none needed)_ |
-| `moonshot` | openai | `https://api.moonshot.ai/v1` | `MOONSHOT_API_KEY` |
-| `zai` | openai | `https://api.z.ai/api/coding/paas/v4` | `ZAI_API_KEY` |
-| `deepseek` | openai | `https://api.deepseek.com` | `DEEPSEEK_API_KEY` |
-| `dashscope` | openai | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `DASHSCOPE_API_KEY` |
-| `openrouter` | openai | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
+| Preset       | Wire      | Base URL                                            | Key env              |
+| ------------ | --------- | --------------------------------------------------- | -------------------- |
+| `gemini`     | gemini    | _(SDK default)_                                     | `GEMINI_API_KEY`     |
+| `anthropic`  | anthropic | _(SDK default)_                                     | `ANTHROPIC_API_KEY`  |
+| `openai`     | openai    | _(SDK default)_                                     | `OPENAI_API_KEY`     |
+| `ollama`     | openai    | `http://localhost:11434/v1`                         | _(none needed)_      |
+| `moonshot`   | openai    | `https://api.moonshot.ai/v1`                        | `MOONSHOT_API_KEY`   |
+| `zai`        | openai    | `https://api.z.ai/api/coding/paas/v4`               | `ZAI_API_KEY`        |
+| `deepseek`   | openai    | `https://api.deepseek.com`                          | `DEEPSEEK_API_KEY`   |
+| `dashscope`  | openai    | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `DASHSCOPE_API_KEY`  |
+| `openrouter` | openai    | `https://openrouter.ai/api/v1`                      | `OPENROUTER_API_KEY` |
 
 `detectProvider(model)` maps a model name to a preset by longest-matching prefix
 (`claude-` → anthropic, `kimi-` → moonshot, `glm-` → zai, …), falling back to `gemini`
@@ -272,13 +277,13 @@ for unrecognised names so that custom proxy aliases keep working.
 Two properties of local inference need explicit handling:
 
 1. **Context windows are per-install.** A stock `qwen2.5-coder:14b` reports 32 768 — well
-   *under* the 100 000 static default, so without discovery auto-compact never fires and
+   _under_ the 100 000 static default, so without discovery auto-compact never fires and
    the model silently truncates. `/api/tags` supplies the real value; failures degrade to
    the static default rather than crashing.
 2. **Tool calls arrive as text.** Open-weight models frequently ignore their chat
    template's `<tool_call>` wrapper and emit bare or fenced JSON into message content, so
    the agent loop sees no calls and ends the turn. `salvage.ts` promotes such payloads
-   back to function calls, but only when the turn produced no structured calls *and* the
+   back to function calls, but only when the turn produced no structured calls _and_ the
    name matches a tool actually offered — a model discussing a tool in prose is never
    silently executed.
 
@@ -338,6 +343,7 @@ src/tools/
     workflow.ts    Restricted agent workflow DSL, bounded parallel/pipeline execution,
                    host-owned worker approval/worktree callbacks, JSON Schema result validation.
   web/
+    search.ts      web_search — DuckDuckGo HTML search; no API key.
     fetch.ts       web_fetch — HTTP GET with content extraction.
 ```
 
@@ -347,14 +353,14 @@ Tools that can return arbitrarily large output (`bash`, `grep`, `glob`, MCP tool
 
 #### Sandbox layer
 
-The sandbox layer wraps every `bash` execution with OS-level isolation. It is layered *after* the HITL confirmation gate — both layers must pass before a command runs.
+The sandbox layer wraps every `bash` execution with OS-level isolation. It is layered _after_ the HITL confirmation gate — both layers must pass before a command runs.
 
 **`SandboxRunner` interface** is the single abstraction the `bash` tool depends on:
 
 ```typescript
 interface SandboxRunner {
-  readonly mode: SandboxMode;   // "auto" | "strict" | "off"
-  readonly warning: string | null;  // non-null when isolation was downgraded
+  readonly mode: SandboxMode; // "auto" | "strict" | "off"
+  readonly warning: string | null; // non-null when isolation was downgraded
   exec(command: string, opts: SandboxExecOptions): Promise<SandboxExecResult>;
 }
 ```
@@ -368,19 +374,19 @@ interface SandboxRunner {
 
 **Platform dispatch** (`createSandboxRunner`):
 
-| Platform | Mode `"auto"` | Mode `"off"` |
-|----------|--------------|-------------|
-| macOS | `SandboxExecRunner` (sandbox-exec) | `PassthroughRunner` |
-| Linux | `BwrapRunner` (bwrap) | `PassthroughRunner` |
-| Other | `PassthroughRunner` + warning | `PassthroughRunner` |
+| Platform | Mode `"auto"`                      | Mode `"off"`        |
+| -------- | ---------------------------------- | ------------------- |
+| macOS    | `SandboxExecRunner` (sandbox-exec) | `PassthroughRunner` |
+| Linux    | `BwrapRunner` (bwrap)              | `PassthroughRunner` |
+| Other    | `PassthroughRunner` + warning      | `PassthroughRunner` |
 
 **Mode semantics** (see [docs/design/a7-sandbox-loosen-auto.md](design/a7-sandbox-loosen-auto.md)):
 
-| Mode | Purpose | Trust model |
-|------|---------|-------------|
-| `auto` | Prevent obvious accidents — writes to system & credential paths denied; reads and network unrestricted; writes allowed to CWD, `/tmp`, and common dev dot-dirs (`~/.npm`, `~/.cache`, etc.). | Convenience first. **Not a security boundary.** |
-| `strict` | Real isolation — no external network, writes only to CWD + tmp, reads restricted to CWD + system binaries. | Untrusted code; expect friction. |
-| `off` | No isolation. | Trusted local environment. |
+| Mode     | Purpose                                                                                                                                                                                      | Trust model                                     |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `auto`   | Prevent obvious accidents — writes to system & credential paths denied; reads and network unrestricted; writes allowed to CWD, `/tmp`, and common dev dot-dirs (`~/.npm`, `~/.cache`, etc.). | Convenience first. **Not a security boundary.** |
+| `strict` | Real isolation — no external network, writes only to CWD + tmp, reads restricted to CWD + system binaries.                                                                                   | Untrusted code; expect friction.                |
+| `off`    | No isolation.                                                                                                                                                                                | Trusted local environment.                      |
 
 **Startup warning**: `runner.warning` is emitted exactly once to `stderr` at CLI startup if isolation was downgraded (e.g. bwrap missing, namespaces disabled, unsupported platform).
 
@@ -439,12 +445,12 @@ Only if all three pass is `tool.execute(params)` called.
 
 #### `requiresConfirmation` policy
 
-| Tool | Triggers confirmation |
-|---|---|
-| `bash` | Any command not in `SAFE_COMMANDS` allowlist |
-| `write` | Path outside `process.cwd()` |
-| `edit` | Path outside `process.cwd()` |
-| `multi_edit` | Path outside `process.cwd()` |
+| Tool         | Triggers confirmation                        |
+| ------------ | -------------------------------------------- |
+| `bash`       | Any command not in `SAFE_COMMANDS` allowlist |
+| `write`      | Path outside `process.cwd()`                 |
+| `edit`       | Path outside `process.cwd()`                 |
+| `multi_edit` | Path outside `process.cwd()`                 |
 
 ---
 
@@ -498,11 +504,11 @@ src/skills/
 
 #### Three-tier loading
 
-| Tier | Content | Loaded when | Token cost |
-|---|---|---|---|
-| Catalog | name + description only | Session start (always) | ~50–100 / skill |
-| Body | Full SKILL.md instructions | On activation | < 5 000 recommended |
-| Resources | Scripts, reference files | When referenced in body | On demand |
+| Tier      | Content                    | Loaded when             | Token cost          |
+| --------- | -------------------------- | ----------------------- | ------------------- |
+| Catalog   | name + description only    | Session start (always)  | ~50–100 / skill     |
+| Body      | Full SKILL.md instructions | On activation           | < 5 000 recommended |
+| Resources | Scripts, reference files   | When referenced in body | On demand           |
 
 #### Invocation paths
 
@@ -548,6 +554,7 @@ Server names are sanitised by replacing any character that is not `[a-zA-Z0-9_-]
 #### HITL confirmation for MCP tools
 
 All MCP tools require confirmation. The confirm dialog in the REPL shows two extra choices for MCP tools:
+
 - `t` — allow this specific tool (any args) for the rest of the project session
 - `s` — allow all tools from this server for the rest of the project session
 
@@ -598,14 +605,14 @@ src/state/
 
 Environment variables override config file values:
 
-| Variable | Overrides |
-|---|---|
-| `GEMINI_API_KEY` | `config.geminiApiKey` |
-| `ANTHROPIC_API_KEY` | `config.anthropicApiKey` |
-| `OPENAI_API_KEY` | `config.openaiApiKey` |
-| `OPENCLI_MODEL` | `config.model` (beats `--model` flag too) |
-| `OPENCLI_SYSTEM_MD` | Path to a Markdown file replacing the default system instruction |
-| `OPENCLI_MAX_TOOL_OUTPUT` | Per-tool output cap in chars (default 20 000) |
+| Variable                  | Overrides                                                        |
+| ------------------------- | ---------------------------------------------------------------- |
+| `GEMINI_API_KEY`          | `config.geminiApiKey`                                            |
+| `ANTHROPIC_API_KEY`       | `config.anthropicApiKey`                                         |
+| `OPENAI_API_KEY`          | `config.openaiApiKey`                                            |
+| `OPENCLI_MODEL`           | `config.model` (beats `--model` flag too)                        |
+| `OPENCLI_SYSTEM_MD`       | Path to a Markdown file replacing the default system instruction |
+| `OPENCLI_MAX_TOOL_OUTPUT` | Per-tool output cap in chars (default 20 000)                    |
 
 #### Settings (`.opencli/settings.json` — project-scoped)
 
@@ -613,7 +620,7 @@ Environment variables override config file values:
 {
   "permissions": {
     "allow": ["bash:git status", "bash:npm test"],
-    "deny":  ["bash(rm -rf *)", "write(.env*)", "edit(package-lock.json)"]
+    "deny": ["bash(rm -rf *)", "write(.env*)", "edit(package-lock.json)"]
   }
 }
 ```
@@ -697,15 +704,15 @@ User: /plan refactor auth module
 
 ## Layer constraints (enforced by convention, linted manually)
 
-| Layer | May import from | Must never import from |
-|---|---|---|
-| `src/cli/` | all layers | — |
-| `src/core/` | `providers/`, `tools/`, `skills/` | `cli/`, `state/` |
-| `src/providers/` | `providers/` only | `cli/`, `core/`, `tools/`, `skills/`, `state/` |
-| `src/tools/` | `providers/types` | `cli/`, `core/`, `providers/` (non-types), `state/` |
-| `src/mcp/` | `providers/types`, `@modelcontextprotocol/sdk` | `cli/`, `core/`, `tools/`, `state/` |
-| `src/skills/` | Node builtins | `cli/`, `core/`, `providers/`, `tools/`, `state/` |
-| `src/state/` | Node builtins, `providers/factory` (for Provider type) | `cli/`, `core/` |
+| Layer            | May import from                                        | Must never import from                              |
+| ---------------- | ------------------------------------------------------ | --------------------------------------------------- |
+| `src/cli/`       | all layers                                             | —                                                   |
+| `src/core/`      | `providers/`, `tools/`, `skills/`                      | `cli/`, `state/`                                    |
+| `src/providers/` | `providers/` only                                      | `cli/`, `core/`, `tools/`, `skills/`, `state/`      |
+| `src/tools/`     | `providers/types`                                      | `cli/`, `core/`, `providers/` (non-types), `state/` |
+| `src/mcp/`       | `providers/types`, `@modelcontextprotocol/sdk`         | `cli/`, `core/`, `tools/`, `state/`                 |
+| `src/skills/`    | Node builtins                                          | `cli/`, `core/`, `providers/`, `tools/`, `state/`   |
+| `src/state/`     | Node builtins, `providers/factory` (for Provider type) | `cli/`, `core/`                                     |
 
 ---
 

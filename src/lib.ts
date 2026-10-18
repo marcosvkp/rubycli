@@ -165,6 +165,7 @@ export type { McpServerStatus } from "./mcp/manager.js";
 export { McpClient } from "./mcp/client.js";
 export {
   loadMcpConfig,
+  resolveMcpServerConfig,
   saveMcpServer,
   removeMcpServer,
   validateMcpServerConfig,

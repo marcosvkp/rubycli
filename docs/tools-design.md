@@ -11,8 +11,8 @@ Tools are the mechanism by which the LLM interacts with the outside world. Every
 ```typescript
 interface Tool {
   name: string;
-  description: string;        // what the model reads to decide when to call it
-  parameters: JSONSchema;     // input schema
+  description: string; // what the model reads to decide when to call it
+  parameters: JSONSchema; // input schema
   execute: (params: Record<string, unknown>) => Promise<ToolResult>;
   /** Return true to require interactive user confirmation before the executor runs this call. */
   requiresConfirmation?: (args: Record<string, unknown>) => boolean;
@@ -42,6 +42,7 @@ Agent.run()
 ### Plan mode
 
 When `Agent.run(input, "plan")` is called, only read-only tools are exposed. The allowed set is `PLAN_MODE_TOOLS` in `core.ts`. Write tools are blocked at two layers:
+
 1. Filtered from the tool definitions sent to the LLM
 2. Refused by the executor (`WRITE_TOOLS` set in `executor.ts`) as defence-in-depth
 
@@ -51,6 +52,7 @@ Before executing any tool call, the executor checks the optional `requiresConfir
 
 - **Returns false / hook absent** → execute immediately (no dialog).
 - **Returns true + interactive REPL** → show a `selectKey` prompt:
+
   ```
     ⚠  bash requires confirmation
        rm -rf ./dist
@@ -60,7 +62,9 @@ Before executing any tool call, the executor checks the optional `requiresConfir
       Yes, always this session   [s]
       No, skip   [n]
   ```
+
   "Always this session" adds a key to an in-memory set so the same call is auto-approved for the rest of the session.
+
 - **Returns true + non-interactive `run` mode** → auto-denied unless `--yes` flag was passed (which installs an auto-approve `ConfirmFn`).
 
 The `ConfirmFn` type is defined in `executor.ts` and injected via `ExecutorDeps`. This keeps the executor testable — tests pass a mock `vi.fn()` rather than triggering real terminal I/O.
@@ -70,7 +74,7 @@ The `ConfirmFn` type is defined in `executor.ts` and injected via `ExecutorDeps`
 Tools fall into two display categories in the CLI:
 
 - **Compact** (`COMPACT_TOOLS` in `renderer.ts`): rendered as a single dim line. Used for fast, read-only tools with low visual noise: `read`, `glob`, `grep`, `ls`, `think`, `todo_read`, `todo_write`.
-- **Full box**: rendered as a bordered box with the tool name, arguments, and a result line. Used for write/exec tools: `write`, `edit`, `bash`, `web_fetch`.
+- **Full box**: rendered as a bordered box with the tool name, arguments, and a result line. Used for write/exec/web tools: `write`, `edit`, `bash`, `web_search`, `web_fetch`.
 
 ---
 
@@ -79,6 +83,7 @@ Tools fall into two display categories in the CLI:
 ### File tools (`src/tools/file/`)
 
 #### `read`
+
 Read file contents with line numbers (`cat -n` style). Supports `offset` (1-based start line) and `limit` (max lines) for reading large files in chunks. Line numbers are included so the model can pass them back to `edit`.
 
 **When to use:** reading any file. Use `offset`/`limit` for large files once you know the relevant line range (e.g. after `list_code_definitions`).
@@ -86,6 +91,7 @@ Read file contents with line numbers (`cat -n` style). Supports `offset` (1-base
 **Plan mode:** ✅ allowed
 
 #### `write`
+
 Create or overwrite a file entirely. Requires `file_path` and `content`.
 
 **Confirmation:** `requiresConfirmation` returns `true` only for paths outside `process.cwd()`. Files within the project directory are written without prompting.
@@ -95,6 +101,7 @@ Create or overwrite a file entirely. Requires `file_path` and `content`.
 **Plan mode:** ❌ blocked
 
 #### `edit`
+
 Exact `old_string → new_string` replacement. The `old_string` must appear **exactly once** in the file — fails with a clear error if ambiguous or not found.
 
 **Confirmation:** `requiresConfirmation` returns `true` only for paths outside `process.cwd()`. Edits within the project directory proceed without prompting.
@@ -104,6 +111,7 @@ Exact `old_string → new_string` replacement. The `old_string` must appear **ex
 **Plan mode:** ❌ blocked
 
 #### `glob`
+
 Find files by glob pattern (`**/*.ts`, `src/**/*.test.ts`). Returns matching paths sorted by modification time (newest first). Skips `node_modules` and hidden directories.
 
 **When to use:** finding files by name/extension pattern. Use `grep` when you need to search by content.
@@ -111,6 +119,7 @@ Find files by glob pattern (`**/*.ts`, `src/**/*.test.ts`). Returns matching pat
 **Plan mode:** ✅ allowed
 
 #### `grep`
+
 Regex search across file contents. Returns matching lines with file path and line number.
 
 **When to use:** finding where a symbol is used, searching for a string across the codebase.
@@ -118,6 +127,7 @@ Regex search across file contents. Returns matching lines with file path and lin
 **Plan mode:** ✅ allowed
 
 #### `ls`
+
 List directory contents with file type and size. Directories are listed first, then files alphabetically. Files include byte size.
 
 **When to use:** exploring a directory structure. Prefer over `bash ls` — no shell spawn, no dangerous-command guard, returns structured output. Use `glob` when you need pattern matching.
@@ -127,6 +137,7 @@ List directory contents with file type and size. Directories are listed first, t
 ### Exec tools (`src/tools/exec/`)
 
 #### `bash`
+
 Execute a shell command. Output is truncated at `OPENCLI_MAX_TOOL_OUTPUT`.
 
 **Confirmation:** `requiresConfirmation` returns `false` only for commands matching the `SAFE_COMMANDS` allowlist (read-only file inspection, git status/log/diff/show, npm test/typecheck/lint). Every other command — including formerly hard-blocked patterns like `rm -rf` and `git push --force` — routes through the HITL confirmation gate so the user can approve or deny interactively.
@@ -137,16 +148,26 @@ Execute a shell command. Output is truncated at `OPENCLI_MAX_TOOL_OUTPUT`.
 
 ### Web tools (`src/tools/web/`)
 
-#### `web_fetch`
-Fetch a URL and return its content as plain text. HTML is converted to readable text (style/script blocks removed, tags stripped, entities decoded). Response is truncated to `OPENCLI_MAX_TOOL_OUTPUT`.
+#### `web_search`
 
-**When to use:** reading documentation, GitHub issues, API references, or any URL the user shares. Does not support arbitrary curl flags — the URL is the only input.
+Searches the public web through DuckDuckGo’s non-JavaScript HTML results page. It needs no API key and returns up to 10 result titles, canonical URLs, and snippets. Requests use the same SSRF protection, response-size cap, and 15-second deadline as `web_fetch`. Search results are untrusted content and may be temporarily rate-limited by DuckDuckGo.
+
+**When to use:** discovering current pages, repositories, packages, or documentation. Use `web_fetch` to read a specific result URL.
+
+**Plan mode:** ✅ allowed (read-only)
+
+#### `web_fetch`
+
+Fetch a known URL and return its content as plain text. HTML is converted to readable text (style/script blocks removed, tags stripped, entities decoded). Response is truncated to `OPENCLI_MAX_TOOL_OUTPUT`.
+
+**When to use:** reading documentation, GitHub issues, API references, or any URL the user shares. Use `web_search` for discovery. Does not support arbitrary curl flags — the URL is the only input.
 
 **Plan mode:** ✅ allowed (read-only)
 
 ### Task tools (`src/tools/task/`)
 
 #### `todo_write`
+
 Write the session task list. Replaces the entire list on every call. Each item has `id`, `text`, and `status` (`pending` / `in_progress` / `done`). Stored in a pid-keyed temp file for the lifetime of the process (= one CLI session).
 
 **When to use:** multi-step tasks — write the plan as todos at the start, update status as each step completes. Pairs naturally with `/plan` mode.
@@ -154,6 +175,7 @@ Write the session task list. Replaces the entire list on every call. Each item h
 **Plan mode:** ❌ blocked (mutates state)
 
 #### `todo_read`
+
 Read the current session task list written by `todo_write`. Returns a formatted list with status icons: `[ ]` pending, `[~]` in_progress, `[x]` done.
 
 **When to use:** checking progress before continuing a multi-step task, or after a session resume.
@@ -163,6 +185,7 @@ Read the current session task list written by `todo_write`. Returns a formatted 
 ### Think tool (`src/tools/think.ts`)
 
 #### `think`
+
 A private scratchpad. The model writes reasoning text; no side effects. Output is never shown to the user. Omitted for models with native thinking/reasoning (Gemini 2.5+, any model where `hasNativeThinking()` returns true) since their built-in reasoning is cheaper.
 
 **When to use:** working through a complex problem before taking action.
@@ -179,15 +202,15 @@ Some capabilities are implemented server-side by the LLM provider and cannot be 
 
 Each provider that supports native search requires its own declaration injected at the provider client level:
 
-| Provider | Declaration |
-|---|---|
-| Anthropic | `{ type: "web_search_20250305" }` in `tools[]` |
-| Gemini | `{ googleSearch: {} }` in `tools[]` |
-| Kimi | `{ type: "builtin_function", function: { name: "$web_search" } }` |
-| Qwen | `enable_search: true` via `extra_body` |
-| Grok | `{ type: "web_search" }` in Responses API |
+| Provider  | Declaration                                                       |
+| --------- | ----------------------------------------------------------------- |
+| Anthropic | `{ type: "web_search_20250305" }` in `tools[]`                    |
+| Gemini    | `{ googleSearch: {} }` in `tools[]`                               |
+| Kimi      | `{ type: "builtin_function", function: { name: "$web_search" } }` |
+| Qwen      | `enable_search: true` via `extra_body`                            |
+| Grok      | `{ type: "web_search" }` in Responses API                         |
 
-Providers without native search (OpenAI standard models, DeepSeek, Gemma) require a client-side fallback tool using a third-party search API. See `docs/tool-gaps-research.md` and issue #37.
+The client-side `web_search` fallback is available to every provider through DuckDuckGo’s no-key HTML results page. Provider-native search integrations can still add provider citations or model-specific search features later.
 
 ---
 
@@ -199,15 +222,15 @@ Providers without native search (OpenAI standard models, DeepSeek, Gemma) requir
 4. **Plan mode** — decide if the tool is read-only. If yes, add its name to `PLAN_MODE_TOOLS` in `src/agent/core.ts`. If it mutates state, add it to `WRITE_TOOLS` in `src/agent/executor.ts`.
 5. **Confirmation** — if the tool can have side effects outside the project or is irreversible, implement `requiresConfirmation(args) => boolean`. Return `true` for calls that warrant a user prompt; return `false` (or omit the hook entirely) for safe read-only calls. The executor handles the actual dialog — the tool just signals intent.
 6. **Renderer** — decide if it should render as compact or full-box. Add to `COMPACT_TOOLS` in `src/cli/renderer.ts` if it's a fast read-only tool.
-6. **Tool description** — the description is what the model reads to decide *when* to call the tool. It should state: what the tool does, what it returns, and when to prefer it over alternatives (e.g. "use `ls` for directory listing; use `glob` when you need pattern matching").
+7. **Tool description** — the description is what the model reads to decide _when_ to call the tool. It should state: what the tool does, what it returns, and when to prefer it over alternatives (e.g. "use `ls` for directory listing; use `glob` when you need pattern matching").
 
 ---
 
 ## Planned tools
 
-| Tool | Issue | Status | Notes |
-|---|---|---|---|
-| `list_code_definitions` | #27 Phase 2 | Planned | Regex over `export (function\|class\|const\|type\|interface)`; upgrade to tree-sitter later |
-| `web_search` (native) | #37 | Planned | Provider-native per-client injection; fallback to Brave/Tavily for unsupported providers |
-| LSP tools | #27 future | Future | Full LSP client — `documentSymbol`, `goToDefinition`, `findReferences`; matches Claude Code depth |
-| `browser_action` | #27 out of scope | Deferred | Playwright; too heavy for terminal CLI |
+| Tool                    | Issue            | Status   | Notes                                                                                                           |
+| ----------------------- | ---------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `list_code_definitions` | #27 Phase 2      | Planned  | Regex over `export (function\|class\|const\|type\|interface)`; upgrade to tree-sitter later                     |
+| `web_search` (native)   | #37              | Planned  | The cross-provider DuckDuckGo fallback is implemented; provider-native citation integrations remain future work |
+| LSP tools               | #27 future       | Future   | Full LSP client — `documentSymbol`, `goToDefinition`, `findReferences`; matches Claude Code depth               |
+| `browser_action`        | #27 out of scope | Deferred | Playwright; too heavy for terminal CLI                                                                          |

@@ -8,6 +8,7 @@ export { lsTool } from "./file/ls.js";
 export { createBashTool } from "./exec/bash.js";
 export { thinkTool } from "./think.js";
 export { webFetchTool } from "./web/fetch.js";
+export { webSearchTool } from "./web/search.js";
 export { todoWriteTool, todoReadTool } from "./task/todo.js";
 export { createTaskTool, type SpawnSubAgentFn } from "./task/subagent.js";
 export { createAskUserTool, type AskUserFn } from "./task/ask-user.js";
@@ -47,6 +48,7 @@ import { lsTool } from "./file/ls.js";
 import { createBashTool } from "./exec/bash.js";
 import { thinkTool } from "./think.js";
 import { webFetchTool } from "./web/fetch.js";
+import { webSearchTool } from "./web/search.js";
 import { todoWriteTool, todoReadTool } from "./task/todo.js";
 import { createTaskTool, type SpawnSubAgentFn } from "./task/subagent.js";
 import { createAskUserTool, type AskUserFn } from "./task/ask-user.js";
@@ -82,6 +84,7 @@ export function createDefaultRegistry(
       : fileTools),
     createBashTool(effectiveRunner, opts?.workspaceRoot),
     webFetchTool,
+    webSearchTool,
     todoWriteTool,
     todoReadTool,
     createAskUserTool(opts?.askUser),
