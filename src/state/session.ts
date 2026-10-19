@@ -323,7 +323,7 @@ export type SessionEntry =
 /** A versioned, host-owned transcript annotation that is excluded from provider history. */
 export interface SessionUiEvent {
   version: 1;
-  kind: "subagent-config" | "subagent" | "user-question";
+  kind: "subagent-config" | "subagent" | "user-question" | "generated-image";
   id: string;
   data: Record<string, unknown>;
 }

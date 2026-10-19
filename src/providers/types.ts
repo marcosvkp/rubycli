@@ -58,6 +58,18 @@ export interface ToolResult {
   success: boolean;
   output: string;
   error?: string;
+  /**
+   * UI-only artifacts returned by a tool. These never enter FunctionResultPart,
+   * so binary image data is not sent back to the model as conversation text.
+   */
+  images?: ToolImageArtifact[];
+}
+
+export interface ToolImageArtifact {
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  /** Base64 image bytes, kept out of the model-visible tool result. */
+  base64: string;
+  alt: string;
 }
 
 // Normalized stream event types emitted by all provider clients

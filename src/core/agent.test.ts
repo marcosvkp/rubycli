@@ -68,6 +68,52 @@ describe("Agent max turns guard", () => {
   });
 });
 
+describe("UI-only image results", () => {
+  it("emits generated images to the host without putting base64 in model history", async () => {
+    const base64 = "private-image-bytes";
+    let streamCount = 0;
+    let nextMessages: Message[] = [];
+    const client: LLMClient = {
+      async *stream(messages) {
+        streamCount++;
+        if (streamCount === 1) {
+          yield {
+            type: "function_call",
+            id: "image-call",
+            name: "image_generate",
+            args: { model: "image-model", prompt: "A forest" },
+          } as StreamEvent;
+          yield { type: "done" } as StreamEvent;
+          return;
+        }
+        nextMessages = messages;
+        yield { type: "text", text: "Finished." } as StreamEvent;
+        yield { type: "done" } as StreamEvent;
+      },
+    };
+    const registry = new ToolRegistry();
+    registry.register({
+      name: "image_generate",
+      description: "",
+      parameters: { type: "object", properties: {} },
+      execute: async () => ({
+        success: true,
+        output: "Image generated.",
+        images: [{ mimeType: "image/png", base64, alt: "Generated" }],
+      }),
+    });
+    const agent = new Agent(client, registry, new SkillRegistry(), undefined, undefined, 5);
+
+    const events = await collectEvents(agent, "Make a forest image");
+    const result = events.find((event) => event.type === "tool_result");
+
+    expect(result?.type).toBe("tool_result");
+    if (result?.type === "tool_result") expect(result.images?.[0].base64).toBe(base64);
+    expect(JSON.stringify(nextMessages)).not.toContain(base64);
+    expect(JSON.stringify(nextMessages)).toContain("Image generated.");
+  });
+});
+
 describe("Agent.setModel", () => {
   function makeQuietClient(): LLMClient {
     return {

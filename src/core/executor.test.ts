@@ -50,6 +50,35 @@ describe("executeCalls", () => {
     expect(results[0].id).toBe("call-1");
   });
 
+  it("keeps UI image artifacts out of the model-visible tool result", async () => {
+    const registry = new ToolRegistry();
+    const image = {
+      mimeType: "image/png" as const,
+      base64: "iVBORw0KGgo=",
+      alt: "generated image",
+    };
+    registry.register({
+      name: "image_generate",
+      description: "",
+      parameters: { type: "object", properties: {} },
+      execute: async () => ({
+        success: true,
+        output: "Image generated.",
+        images: [image],
+      }),
+    });
+
+    const { results, toolImages } = await executeCalls([makeToolCall("image_generate")], {
+      tools: registry,
+      skills: makeSkillRegistry({}),
+      context: new ContextManager(),
+    });
+
+    expect(results[0].result).toBe("Image generated.");
+    expect(results[0].result).not.toContain(image.base64);
+    expect(toolImages).toEqual([[image]]);
+  });
+
   it("executes multiple read-only tool calls in parallel", async () => {
     const order: string[] = [];
     const registry = new ToolRegistry();

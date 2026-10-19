@@ -1,6 +1,10 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { FunctionCallPart, FunctionResultPart } from "../providers/types.js";
+import type {
+  FunctionCallPart,
+  FunctionResultPart,
+  ToolImageArtifact,
+} from "../providers/types.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { SkillRegistry } from "../skills/registry.js";
 import type { ContextManager } from "./context.js";
@@ -97,6 +101,8 @@ export function truncateOutput(output: string, callId: string, tmpDir?: string):
 
 export interface ExecutionResult {
   results: FunctionResultPart[];
+  /** UI-only images aligned by index with results; never copied into provider history. */
+  toolImages: ToolImageArtifact[][];
   // Synthetic function_result entries for internal skill calls. Skill reads are
   // returned to the model without executing preprocessors; activation calls inject
   // processed content into context. Each still needs a provider-matched response.
@@ -111,7 +117,12 @@ export interface ExecutionResult {
  * local reads are the user's own files and stay trusted (#309).
  */
 export function isUntrustedSource(toolName: string, args: Record<string, unknown>): boolean {
-  if (toolName === "web_search" || toolName === "web_fetch" || toolName.startsWith("mcp__"))
+  if (
+    toolName === "web_search" ||
+    toolName === "web_fetch" ||
+    toolName === "image_models" ||
+    toolName.startsWith("mcp__")
+  )
     return true;
   if (toolName === "read" || toolName === "grep") {
     // Missing/invalid path args default to cwd — trusted project-local.
@@ -159,7 +170,7 @@ export function isUntrustedResult(toolName: string): boolean {
 async function executeOneCall(
   call: FunctionCallPart,
   deps: ExecutorDeps,
-): Promise<FunctionResultPart> {
+): Promise<{ result: FunctionResultPart; images: ToolImageArtifact[] }> {
   const tool = deps.tools.get(call.name);
   // Propagate the call's thoughtSignature onto every result we return — Gemini
   // thinking models require the same signature echoed back on functionResponse.
@@ -169,11 +180,14 @@ async function executeOneCall(
   if (readOnly && !tool?.readonly) {
     deps.obs?.({ type: "tool_denied", name: call.name, reason: "plan_mode" });
     return {
-      type: "function_result",
-      id: call.id,
-      name: call.name,
-      result: `Error: '${call.name}' is blocked in plan mode. Use read, glob, or grep to explore the codebase.`,
-      ...sig,
+      result: {
+        type: "function_result",
+        id: call.id,
+        name: call.name,
+        result: `Error: '${call.name}' is blocked in plan mode. Use read, glob, or grep to explore the codebase.`,
+        ...sig,
+      },
+      images: [],
     };
   }
   const args = call.args as Record<string, unknown>;
@@ -196,13 +210,16 @@ async function executeOneCall(
         reason: deps.confirmFn ? "user_denied" : "non_interactive",
       });
       return {
-        type: "function_result",
-        id: call.id,
-        name: call.name,
-        result: deps.confirmFn
-          ? `Blocked: user denied '${call.name}' tool call.`
-          : `Blocked: '${call.name}' requires confirmation but is running non-interactively. Pass --yes to auto-approve.`,
-        ...sig,
+        result: {
+          type: "function_result",
+          id: call.id,
+          name: call.name,
+          result: deps.confirmFn
+            ? `Blocked: user denied '${call.name}' tool call.`
+            : `Blocked: '${call.name}' requires confirmation but is running non-interactively. Pass --yes to auto-approve.`,
+          ...sig,
+        },
+        images: [],
       };
     }
   }
@@ -228,17 +245,20 @@ async function executeOneCall(
     outputBytes: output.length,
   });
   return {
-    type: "function_result",
-    id: call.id,
-    name: call.name,
-    result: output,
-    ...sig,
-    // Provenance tag (#309): marks this result as having delivered untrusted
-    // content, which the agent loop reads to keep the confirmation bump armed
-    // for the rest of the turn.
-    ...(isUntrustedSource(call.name, args) || isUntrustedResult(call.name)
-      ? { untrusted: true }
-      : {}),
+    result: {
+      type: "function_result",
+      id: call.id,
+      name: call.name,
+      result: output,
+      ...sig,
+      // Provenance tag (#309): marks this result as having delivered untrusted
+      // content, which the agent loop reads to keep the confirmation bump armed
+      // for the rest of the turn.
+      ...(isUntrustedSource(call.name, args) || isUntrustedResult(call.name)
+        ? { untrusted: true }
+        : {}),
+    },
+    images: result.images ?? [],
   };
 }
 
@@ -343,19 +363,24 @@ export async function executeCalls(
     untrustedConsumed: deps.untrustedConsumed || batchArms,
   };
 
-  let results: FunctionResultPart[];
+  let executions: Array<{ result: FunctionResultPart; images: ToolImageArtifact[] }>;
   if (toolCalls.some((c) => !deps.tools.get(c.name)?.readonly)) {
     // Snapshot before any writes — capture is idempotent on clean trees and
     // swallows its own errors internally so it never blocks execution.
     await deps.snapshot?.capture(deps.cwd ?? process.cwd());
 
-    results = [];
+    executions = [];
     for (const call of toolCalls) {
-      results.push(await executeOneCall(call, batchDeps));
+      executions.push(await executeOneCall(call, batchDeps));
     }
   } else {
-    results = await Promise.all(toolCalls.map((call) => executeOneCall(call, batchDeps)));
+    executions = await Promise.all(toolCalls.map((call) => executeOneCall(call, batchDeps)));
   }
 
-  return { results, skillResults, skillReadSummaries };
+  return {
+    results: executions.map((execution) => execution.result),
+    toolImages: executions.map((execution) => execution.images),
+    skillResults,
+    skillReadSummaries,
+  };
 }

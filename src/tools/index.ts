@@ -9,6 +9,8 @@ export { createBashTool } from "./exec/bash.js";
 export { thinkTool } from "./think.js";
 export { webFetchTool } from "./web/fetch.js";
 export { webSearchTool } from "./web/search.js";
+export { createImageTools } from "./image-generation.js";
+export type { ImageGenerationToolOptions } from "./image-generation.js";
 export { todoWriteTool, todoReadTool } from "./task/todo.js";
 export { createTaskTool, type SpawnSubAgentFn } from "./task/subagent.js";
 export { createAskUserTool, type AskUserFn } from "./task/ask-user.js";
@@ -49,6 +51,7 @@ import { createBashTool } from "./exec/bash.js";
 import { thinkTool } from "./think.js";
 import { webFetchTool } from "./web/fetch.js";
 import { webSearchTool } from "./web/search.js";
+import { createImageTools, type ImageGenerationToolOptions } from "./image-generation.js";
 import { todoWriteTool, todoReadTool } from "./task/todo.js";
 import { createTaskTool, type SpawnSubAgentFn } from "./task/subagent.js";
 import { createAskUserTool, type AskUserFn } from "./task/ask-user.js";
@@ -73,6 +76,7 @@ export function createDefaultRegistry(
     workflow?: CreateWorkflowToolOptions;
     includeTask?: boolean;
     workspaceRoot?: string;
+    imageGeneration?: ImageGenerationToolOptions;
   },
 ): ToolRegistry {
   const registry = new ToolRegistry();
@@ -92,6 +96,7 @@ export function createDefaultRegistry(
 
   if (opts?.includeTask !== false) tools.push(createTaskTool(opts?.spawnSubAgent));
   if (opts?.workflow) tools.push(createWorkflowTool(opts.workflow));
+  if (opts?.imageGeneration) tools.push(...createImageTools(opts.imageGeneration));
 
   if (!model || !hasNativeThinking(model)) {
     tools.push(thinkTool);

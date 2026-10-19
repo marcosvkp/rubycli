@@ -100,6 +100,7 @@ export type {
   TextPart,
   ToolDefinition,
   ToolResult,
+  ToolImageArtifact,
 } from "./providers/types.js";
 
 // --- Model catalog ----------------------------------------------------------
@@ -115,6 +116,8 @@ export type { FetchModelsResult, RemoteModel } from "./providers/catalog.js";
 
 // --- Tools ------------------------------------------------------------------
 export { createDefaultRegistry } from "./tools/index.js";
+export { createImageTools } from "./tools/image-generation.js";
+export type { ImageGenerationToolOptions } from "./tools/image-generation.js";
 export { ToolRegistry } from "./tools/registry.js";
 export type { JSONSchema, Tool, ToolExecutionContext, ToolRunner } from "./tools/base.js";
 export type {

@@ -10,7 +10,12 @@ import { ContextManager } from "./context.js";
 import { executeCalls, type PermissionMode } from "./executor.js";
 import type { ConfirmFn } from "./executor.js";
 import { buildReminder, buildPlanSuffix, buildPeriodicReminder } from "./prompt.js";
-import type { FunctionCallPart, Message, ReasoningEffort } from "../providers/types.js";
+import type {
+  FunctionCallPart,
+  Message,
+  ReasoningEffort,
+  ToolImageArtifact,
+} from "../providers/types.js";
 import type { ObservabilityHandler } from "./observability.js";
 import type { SnapshotManager } from "../state/snapshot.js";
 import { compactHistory, contextWindowFor, COMPACTION_TARGET_TOKENS } from "./compact.js";
@@ -27,7 +32,14 @@ export type AgentEvent =
       args: Record<string, unknown>;
       thoughtSignature?: string;
     }
-  | { type: "tool_result"; id?: string; name: string; result: string }
+  | {
+      type: "tool_result";
+      id?: string;
+      name: string;
+      result: string;
+      /** UI-only image attachments; omitted from provider conversation history. */
+      images?: ToolImageArtifact[];
+    }
   | { type: "skill_activated"; name: string }
   | { type: "error"; message: string }
   /** Non-fatal informational message (e.g. auto-compact warnings/results).
@@ -417,20 +429,23 @@ export class Agent {
         stuckCount = 1;
       }
 
-      const { results, skillResults, skillReadSummaries } = await executeCalls(pendingCalls, {
-        tools: this.tools,
-        skills: this.skills,
-        context: this.context,
-        tmpDir: this.context.getSessionTmpDir(),
-        readOnly: mode === "plan",
-        permissionMode: this.permissionMode,
-        confirmFn: this.confirmFn,
-        forcesConfirmation: this.forcesConfirmationFn,
-        obs: this.obs,
-        snapshot: this.snapshotManager,
-        cwd: this.workspaceRoot,
-        untrustedConsumed,
-      });
+      const { results, toolImages, skillResults, skillReadSummaries } = await executeCalls(
+        pendingCalls,
+        {
+          tools: this.tools,
+          skills: this.skills,
+          context: this.context,
+          tmpDir: this.context.getSessionTmpDir(),
+          readOnly: mode === "plan",
+          permissionMode: this.permissionMode,
+          confirmFn: this.confirmFn,
+          forcesConfirmation: this.forcesConfirmationFn,
+          obs: this.obs,
+          snapshot: this.snapshotManager,
+          cwd: this.workspaceRoot,
+          untrustedConsumed,
+        },
+      );
 
       if (signal?.aborted) return;
 
@@ -498,12 +513,13 @@ export class Agent {
         yield { type: "skill_activated", name: call.args.name as string };
       }
 
-      for (const result of results) {
+      for (const [index, result] of results.entries()) {
         yield {
           type: "tool_result",
           id: result.id,
           name: result.name,
           result: result.result,
+          ...(toolImages[index]?.length ? { images: toolImages[index] } : {}),
         };
       }
       for (const summary of skillReadSummaries) {
