@@ -106,6 +106,16 @@ function messagesToAnthropicParams(messages: Message[]): Anthropic.MessageParam[
       if (part.type === "text") {
         return { type: "text" as const, text: part.text };
       }
+      if (part.type === "image") {
+        return {
+          type: "image" as const,
+          source: {
+            type: "base64" as const,
+            media_type: part.mimeType,
+            data: part.base64,
+          },
+        };
+      }
       if (part.type === "function_call") {
         return {
           type: "tool_use" as const,

@@ -54,7 +54,7 @@ export class ContextManager {
   }
 
   addMessage(message: Message): void {
-    // Merge into the previous message when both are text-only `user` turns.
+    // Merge consecutive user turns while preserving image parts and their order.
     // This happens after restoring a session that ended on a user message (e.g.
     // the agent crashed mid-turn, or a REPL-only slash command was logged):
     // the user types again, producing two consecutive `user` messages, which
@@ -62,15 +62,18 @@ export class ContextManager {
     // Carrying-`function_result` user messages are NOT merged — they pair with
     // a prior tool call and must stay distinct.
     const last = this.history[this.history.length - 1];
-    if (last && isUserTextOnly(last) && isUserTextOnly(message)) {
-      const mergedText =
-        last.parts.map((p) => (p as { type: "text"; text: string }).text).join("\n\n") +
-        "\n\n" +
-        message.parts.map((p) => (p as { type: "text"; text: string }).text).join("\n\n");
-      this.history[this.history.length - 1] = {
-        role: "user",
-        parts: [{ type: "text", text: mergedText }],
-      };
+    if (last && isUserTurn(last) && isUserTurn(message)) {
+      const merged = [...last.parts];
+      const incoming = [...message.parts];
+      const tail = merged[merged.length - 1];
+      const head = incoming[0];
+      if (tail?.type === "text" && head?.type === "text") {
+        tail.text = `${tail.text}\n\n${head.text}`;
+        merged.push(...incoming.slice(1));
+      } else {
+        merged.push({ type: "text", text: "\n\n" }, ...incoming);
+      }
+      this.history[this.history.length - 1] = { role: "user", parts: merged };
     } else {
       this.history.push(message);
     }
@@ -227,4 +230,12 @@ export class ContextManager {
 
 function isUserTextOnly(msg: Message): boolean {
   return msg.role === "user" && msg.parts.length > 0 && msg.parts.every((p) => p.type === "text");
+}
+
+function isUserTurn(msg: Message): boolean {
+  return (
+    msg.role === "user" &&
+    msg.parts.length > 0 &&
+    !msg.parts.some((part) => part.type === "function_result")
+  );
 }

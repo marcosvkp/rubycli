@@ -349,13 +349,26 @@ function messagesToOpenAIParams(
     } else {
       const funcResults = msg.parts.filter((p) => p.type === "function_result");
       const textParts = msg.parts.filter((p) => p.type === "text");
+      const imageParts = msg.parts.filter((p) => p.type === "image");
 
       for (const p of funcResults) {
         if (p.type !== "function_result") continue;
         result.push({ role: "tool", tool_call_id: p.id, content: p.result });
       }
 
-      if (textParts.length > 0) {
+      if (imageParts.length > 0) {
+        const content: OpenAI.ChatCompletionContentPart[] = [];
+        for (const part of msg.parts) {
+          if (part.type === "text") content.push({ type: "text", text: part.text });
+          if (part.type === "image") {
+            content.push({
+              type: "image_url",
+              image_url: { url: "data:" + part.mimeType + ";base64," + part.base64 },
+            });
+          }
+        }
+        result.push({ role: "user", content });
+      } else if (textParts.length > 0) {
         result.push({
           role: "user",
           content: textParts.map((p) => (p.type === "text" ? p.text : "")).join(""),

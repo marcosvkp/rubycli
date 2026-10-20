@@ -12,6 +12,7 @@ import type { ConfirmFn } from "./executor.js";
 import { buildReminder, buildPlanSuffix, buildPeriodicReminder } from "./prompt.js";
 import type {
   FunctionCallPart,
+  ImageInput,
   Message,
   ReasoningEffort,
   ToolImageArtifact,
@@ -242,11 +243,25 @@ export class Agent {
     userInput: string,
     mode: AgentRunMode = "react",
     signal?: AbortSignal,
+    images: ImageInput[] = [],
   ): AsyncGenerator<AgentEvent> {
     if (signal?.aborted) return;
+    const attachmentNote = images.length
+      ? [
+          "Imagens anexadas pelo usuario (use image_path se precisar editar ou processar o arquivo):",
+          ...images.map(
+            (image, index) =>
+              `- ${image.name ?? `imagem-${index + 1}`}${image.path ? ` - ${image.path}` : ""}`,
+          ),
+        ].join("\n")
+      : "";
+    const userText = attachmentNote ? `${userInput}\n\n${attachmentNote}` : userInput;
     this.context.addMessage({
       role: "user",
-      parts: [{ type: "text", text: userInput }],
+      parts: [
+        { type: "text", text: userText },
+        ...images.map((image) => ({ type: "image" as const, ...image })),
+      ],
     });
 
     const currentTooling = () => {

@@ -118,6 +118,9 @@ export class GeminiClient implements LLMClient {
         if (part.type === "text") {
           return { text: part.text };
         }
+        if (part.type === "image") {
+          return { inlineData: { mimeType: part.mimeType, data: part.base64 } };
+        }
         if (part.type === "function_call") {
           // Prefer the signature carried on the part itself — populated either
           // from this stream's emit or restored from the session JSONL. Fall

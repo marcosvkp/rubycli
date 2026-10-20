@@ -16,6 +16,18 @@ export interface TextPart {
   text: string;
 }
 
+/** Image bytes included in a user message sent to a vision-capable model. */
+export interface ImagePart {
+  type: "image";
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  base64: string;
+  name?: string;
+  /** Workspace-relative session scratch path, usable by image tools. */
+  path?: string;
+}
+
+export type ImageInput = Omit<ImagePart, "type">;
+
 export interface FunctionCallPart {
   type: "function_call";
   id: string;
@@ -47,7 +59,7 @@ export interface FunctionResultPart {
   untrusted?: boolean;
 }
 
-export type MessagePart = TextPart | FunctionCallPart | FunctionResultPart;
+export type MessagePart = TextPart | ImagePart | FunctionCallPart | FunctionResultPart;
 
 export interface Message {
   role: Role;

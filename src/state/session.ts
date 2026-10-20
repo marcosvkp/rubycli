@@ -16,7 +16,12 @@ import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { join } from "node:path";
 import { AGENT_DIR } from "./config.js";
-import type { FunctionCallPart, FunctionResultPart, Message } from "../providers/types.js";
+import type {
+  FunctionCallPart,
+  FunctionResultPart,
+  ImagePart,
+  Message,
+} from "../providers/types.js";
 
 function encodeProjectPath(cwd: string): string {
   return Buffer.from(cwd).toString("base64url");
@@ -195,6 +200,28 @@ function reconstructMessages(entries: SessionEntry[]): Message[] {
       flushCalls();
       flushResults();
       messages.push({ role: "user", parts: [{ type: "text", text: entry.content }] });
+    } else if (entry.type === "ui_event" && entry.event.kind === "user-images") {
+      const last = messages[messages.length - 1];
+      if (
+        !last ||
+        last.role !== "user" ||
+        last.parts.some((part) => part.type === "function_result")
+      ) {
+        continue;
+      }
+      const images = restoreUserImages(entry.event.data.images);
+      if (images.length === 0) continue;
+      const note = [
+        "Imagens anexadas pelo usuario (use image_path se precisar editar ou processar o arquivo):",
+        ...images.map(
+          (image, index) =>
+            `- ${image.name ?? `imagem-${index + 1}`}${image.path ? ` - ${image.path}` : ""}`,
+        ),
+      ].join("\n");
+      const text = last.parts.find((part) => part.type === "text");
+      if (text?.type === "text") text.text = `${text.text}\n\n${note}`;
+      else last.parts.push({ type: "text", text: note });
+      last.parts.push(...images);
     } else if (entry.type === "tool_call") {
       // New tool_call batch: if there were results from a previous round, flush them first
       flushResults();
@@ -248,36 +275,76 @@ function reconstructMessages(entries: SessionEntry[]): Message[] {
   flushCalls();
   flushResults();
 
-  return collapseConsecutiveUserText(messages);
+  return collapseConsecutiveUserTurns(messages);
+}
+
+function restoreUserImages(value: unknown): ImagePart[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 4) return [];
+  const allowedMimeTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
+  let totalChars = 0;
+  const restored: ImagePart[] = [];
+  for (const valueEntry of value) {
+    if (!valueEntry || typeof valueEntry !== "object") return [];
+    const entry = valueEntry as Record<string, unknown>;
+    if (
+      typeof entry.base64 !== "string" ||
+      entry.base64.length === 0 ||
+      entry.base64.length > 11_184_812 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(entry.base64) ||
+      typeof entry.mimeType !== "string" ||
+      !allowedMimeTypes.has(entry.mimeType)
+    )
+      return [];
+    totalChars += entry.base64.length;
+    if (totalChars > 22_369_624) return [];
+    const path =
+      typeof entry.workspacePath === "string" &&
+      /^\.rubycli\/tmp\/[A-Za-z0-9T._-]+\/chat-images\/[0-9a-f-]{36}\.(?:png|jpg|webp)$/.test(
+        entry.workspacePath,
+      )
+        ? entry.workspacePath
+        : undefined;
+    restored.push({
+      type: "image",
+      mimeType: entry.mimeType as ImagePart["mimeType"],
+      base64: entry.base64,
+      ...(typeof entry.name === "string" ? { name: entry.name.slice(0, 120) } : {}),
+      ...(path ? { path } : {}),
+    });
+  }
+  return restored;
 }
 
 /**
- * Merge consecutive `role: "user"` text-only messages into one.
+ * Merge consecutive user messages into one while preserving image parts.
  *
  * Older JSONL logs may contain back-to-back `user` entries — typically because
  * a REPL-only slash command like `/exit` was persisted before being intercepted,
  * or because the agent crashed mid-turn so no `assistant` event followed the
  * user input. Replaying them as separate messages violates provider role
  * alternation (Gemini/Anthropic both 400 on consecutive same-role contents).
- * Merging the text preserves the user's words without breaking the wire format.
+ * Merging preserves the user's text and images without breaking the wire format.
  *
- * Only collapses *text-only* user messages — user messages carrying
+ * User messages carrying
  * `function_result` parts must remain distinct (they pair with prior tool
  * calls and merging would orphan them).
  */
-function collapseConsecutiveUserText(messages: Message[]): Message[] {
+function collapseConsecutiveUserTurns(messages: Message[]): Message[] {
   const result: Message[] = [];
   for (const msg of messages) {
     const last = result[result.length - 1];
-    if (last && isUserTextOnly(last) && isUserTextOnly(msg)) {
-      const mergedText =
-        last.parts.map((p) => (p as { type: "text"; text: string }).text).join("\n\n") +
-        "\n\n" +
-        msg.parts.map((p) => (p as { type: "text"; text: string }).text).join("\n\n");
-      result[result.length - 1] = {
-        role: "user",
-        parts: [{ type: "text", text: mergedText }],
-      };
+    if (last && isUserTurn(last) && isUserTurn(msg)) {
+      const merged = [...last.parts];
+      const incoming = [...msg.parts];
+      const tail = merged[merged.length - 1];
+      const head = incoming[0];
+      if (tail?.type === "text" && head?.type === "text") {
+        tail.text = `${tail.text}\n\n${head.text}`;
+        merged.push(...incoming.slice(1));
+      } else {
+        merged.push({ type: "text", text: "\n\n" }, ...incoming);
+      }
+      result[result.length - 1] = { role: "user", parts: merged };
     } else {
       result.push(msg);
     }
@@ -285,8 +352,12 @@ function collapseConsecutiveUserText(messages: Message[]): Message[] {
   return result;
 }
 
-function isUserTextOnly(msg: Message): boolean {
-  return msg.role === "user" && msg.parts.length > 0 && msg.parts.every((p) => p.type === "text");
+function isUserTurn(msg: Message): boolean {
+  return (
+    msg.role === "user" &&
+    msg.parts.length > 0 &&
+    !msg.parts.some((part) => part.type === "function_result")
+  );
 }
 
 export type SessionEntry =
@@ -323,7 +394,7 @@ export type SessionEntry =
 /** A versioned, host-owned transcript annotation that is excluded from provider history. */
 export interface SessionUiEvent {
   version: 1;
-  kind: "subagent-config" | "subagent" | "user-question" | "generated-image";
+  kind: "subagent-config" | "subagent" | "user-question" | "generated-image" | "user-images";
   id: string;
   data: Record<string, unknown>;
 }

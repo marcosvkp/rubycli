@@ -93,6 +93,8 @@ export type { LLMClient } from "./providers/client.js";
 export type {
   FunctionCallPart,
   FunctionResultPart,
+  ImageInput,
+  ImagePart,
   Message,
   MessagePart,
   Role,
